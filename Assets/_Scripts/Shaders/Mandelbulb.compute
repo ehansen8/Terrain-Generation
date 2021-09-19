@@ -1,0 +1,54 @@
+#pragma kernel MandelbulbGrid
+
+RWStructuredBuffer<float4> grid;
+int resolution;
+float3 start;
+float3 increments;
+float frequency;
+int maxIterations;
+int bulbPower;
+
+int IterateBulb(float3 p, int n)
+{
+    [loop] for (int i = 0; i < maxIterations; i++)
+    {
+        float x2 = p.x * p.x;
+        float y2 = p.y * p.y;
+        float z2 = p.z * p.z;
+        // Can try commenting this out to see if performance improves
+        if (x2+y2+z2 > 2.0f)
+        {
+            return i;
+        }
+
+        float r = sqrt(x2 + y2 + z2);
+        float theta = atan2(p.z, sqrt(x2 + y2));
+        float phi = atan2(p.y , p.x);
+        p.x += pow(r, n) * cos(n * phi) * cos(n * theta);
+        p.y += pow(r, n) * sin(n * phi) * cos(n * phi);
+        p.z += pow(r, n) * sin(n * phi);
+
+    }
+
+    return maxIterations;
+}
+
+//multiples of 64 for NVIDIA
+[numthreads(1024,1,1)]
+void MandelbulbGrid (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    int z = idx / pow(resolution, 2);
+    idx -= z * pow(resolution, 2);
+    int y = idx / resolution;
+    int x = idx % resolution;
+    float3 scale = start + (increments*float3(x,y,z));
+
+    grid[id.x] = float4(scale.x,scale.y,scale.z, IterateBulb(scale, bulbPower));
+}
+
+
+
+
+
+
