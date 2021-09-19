@@ -83,7 +83,7 @@ public class GridShader : ShaderData
     private void InitializeBuffers()
     {
         int gridSize = (int) Mathf.Pow(global_grid_res, 3);
-        gridBuffer = new ComputeBuffer(gridSize, sizeof(float) * 4);
+        gridBuffer = new ComputeBuffer(gridSize, sizeof(float));
 
         shader.SetBuffer(grid_kernel, "gridBuffer", gridBuffer);
     }
@@ -170,7 +170,7 @@ public class MeshShader : ShaderData
         triBuffer.GetData(triangles);
 
         //Release used buffers
-        //DebugVerts(vertexBuffer);
+        //FDebugVerts(vertexBuffer);
         normalBuffer.Release();
         vertexBuffer.Release();
         triBuffer.Release();

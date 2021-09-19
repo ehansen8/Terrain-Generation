@@ -105,7 +105,7 @@ float snoise(float3 v)
 }
 // ABOVE IS SIMPLEX NOISE3D Implementation
 
-RWStructuredBuffer<float4> gridBuffer;
+RWStructuredBuffer<float> gridBuffer;
 int gridRes;
 float3 start;
 float3 increments;
@@ -191,8 +191,7 @@ void SimplexGrid (int3 id : SV_DispatchThreadID)
     int GI = GetGridIndex(id.x,id.y,id.z);
     float3 pos = ScalePosition(id);
 
-    float density = IterateNoise(pos);
-    gridBuffer[GI] = float4(pos.x, pos.y, pos.z, density);
+    gridBuffer[GI] = IterateNoise(pos);
 }
 
 float3 N(HydroCell cell, float3 pos)
@@ -234,77 +233,7 @@ int3 GetClosestCell(float3 pos)
 
 
 
-// ^^^ RWStructuredBuffer<float4> gridBuffer;
-//RWStructuredBuffer<Material> materialBuffer;
-//[numthreads(1,1,1)]
-//void SimulateUplift(int3 Tid : SV_DispatchThreadID)
-//{
-//    Material mat = materialBuffer[Tid.x];
-//
-//    //Each thread simulates the life of a single particle  
-//    while (mat.mass > 0)
-//    {
-//        
-//        // First get the cell that the particle is bounded by
-//        HydroCell cell;
-//        int3 id = GetClosestCell(mat.pos);
-//        //-----------------------------------------------
-//        //mat.dir = id;
-//        //materialBuffer[Tid.x] = mat;
-//        //-----------------------------------------------
-//        if (id.x >= gridRes)
-//            return;
-//        if (id.y >= gridRes)
-//            return;
-//        if (id.z >= gridRes)
-//            return;
-//       
-//        cell.corners[0] = GetGridIndex(id.x, id.y, id.z);
-//        cell.corners[1] = GetGridIndex(id.x, id.y, id.z + 1);
-//        cell.corners[2] = GetGridIndex(id.x + 1, id.y, id.z + 1);
-//        cell.corners[3] = GetGridIndex(id.x + 1, id.y, id.z);
-//        cell.corners[4] = GetGridIndex(id.x, id.y + 1, id.z);
-//        cell.corners[5] = GetGridIndex(id.x, id.y + 1, id.z + 1);
-//        cell.corners[6] = GetGridIndex(id.x + 1, id.y + 1, id.z + 1);
-//        cell.corners[7] = GetGridIndex(id.x + 1, id.y + 1, id.z);
-//
-//        // Next calculate the weights by calculating the distance between particle and each grid point
-//        float totalWeight = 0;;
-//        [unroll] for (int i = 0; i < 8; i++)
-//        {
-//            float4 gp = grid[cell.corners[i]];
-//
-//            float dist = distance(gp.xyz,mat.pos);
-//            float weight = abs(length(increments) - dist);
-//            if (gp.w >= 1)
-//                weight = 0;
-//
-//            cell.weights[i] = weight;
-//            totalWeight += weight;
-//        }
-//
-//        // add the material to each grid point according to its weight
-//        float lost_mass = 0;
-//        for (int j = 0; j < 8; j++)
-//        {
-//            if (totalWeight <= 0)
-//                continue;
-//            float w_i = cell.weights[j]/totalWeight;
-//            float mass = w_i * min(1,mat.mass);
-//            lost_mass += mass;
-//
-//            float4 gp = grid[cell.corners[j]];
-//            grid[ cell.corners[j] ] = float4(gp.x, gp.y, gp.z, gp.w + mass);
-//        }
-//
-//        // The most mass a particle can lose at once is 1 mass unit
-//        mat.mass -= lost_mass;
-//        mat.pos += mat.dir * mat.vel;
-//        materialBuffer[Tid.x] = mat;
-//    }
-//}
 
-//----------------------------------------------------------------------------
 
 //Can add in speed and rate and other features as well
 float P_min_slope;      // minimum value for h_diff, prevents capacity from getting to close to -
@@ -334,12 +263,6 @@ struct Water
     float3 vel;     // normalize for movment updates
     float water;    // mass of water that the particle contains
     float sediment; // mass of sediment that particle contains
-    /*float3 normal;
-    float3 tangent;
-    float phi;
-    int collided;
-    float c;
-    float delta_s;*/
 };
 
 float3 G(float3 pos)
@@ -350,14 +273,14 @@ float3 G(float3 pos)
 HydroCell GetCell(float3 id)
 {
     HydroCell cell;
-    cell.p[0][0] = gridBuffer[GetGridIndex(id.x, id.y, id.z)].w;
-    cell.p[0][1] = gridBuffer[GetGridIndex(id.x, id.y, id.z + 1)].w;
-    cell.p[0][2] = gridBuffer[GetGridIndex(id.x + 1, id.y, id.z + 1)].w;
-    cell.p[0][3] = gridBuffer[GetGridIndex(id.x + 1, id.y, id.z)].w;
-    cell.p[1][0] = gridBuffer[GetGridIndex(id.x, id.y + 1, id.z)].w;
-    cell.p[1][1] = gridBuffer[GetGridIndex(id.x, id.y + 1, id.z + 1)].w;
-    cell.p[1][2] = gridBuffer[GetGridIndex(id.x + 1, id.y + 1, id.z + 1)].w;
-    cell.p[1][3] = gridBuffer[GetGridIndex(id.x + 1, id.y + 1, id.z)].w;
+    cell.p[0][0] = gridBuffer[GetGridIndex(id.x, id.y, id.z)];
+    cell.p[0][1] = gridBuffer[GetGridIndex(id.x, id.y, id.z + 1)];
+    cell.p[0][2] = gridBuffer[GetGridIndex(id.x + 1, id.y, id.z + 1)];
+    cell.p[0][3] = gridBuffer[GetGridIndex(id.x + 1, id.y, id.z)];
+    cell.p[1][0] = gridBuffer[GetGridIndex(id.x, id.y + 1, id.z)];
+    cell.p[1][1] = gridBuffer[GetGridIndex(id.x, id.y + 1, id.z + 1)];
+    cell.p[1][2] = gridBuffer[GetGridIndex(id.x + 1, id.y + 1, id.z + 1)];
+    cell.p[1][3] = gridBuffer[GetGridIndex(id.x + 1, id.y + 1, id.z)];
 
     return cell;
 }
@@ -365,14 +288,14 @@ HydroCell GetCell(float3 id)
 void UpdateNeighbors(float3 id, float delta_s)
 {
     //positive delta_s means the particle gained mass -> thus the neighbors should lose mass
-    gridBuffer[GetGridIndex(id.x, id.y, id.z)].w -= delta_s;
-    gridBuffer[GetGridIndex(id.x, id.y, id.z + 1)].w -= delta_s;
-    gridBuffer[GetGridIndex(id.x + 1, id.y, id.z + 1)].w -= delta_s;
-    gridBuffer[GetGridIndex(id.x + 1, id.y, id.z)].w -= delta_s;
-    gridBuffer[GetGridIndex(id.x, id.y + 1, id.z)].w -= delta_s;
-    gridBuffer[GetGridIndex(id.x, id.y + 1, id.z + 1)].w -= delta_s;
-    gridBuffer[GetGridIndex(id.x + 1, id.y + 1, id.z + 1)].w -= delta_s;
-    gridBuffer[GetGridIndex(id.x + 1, id.y + 1, id.z)].w -= delta_s;
+    gridBuffer[GetGridIndex(id.x, id.y, id.z)] -= delta_s;
+    gridBuffer[GetGridIndex(id.x, id.y, id.z + 1)] -= delta_s;
+    gridBuffer[GetGridIndex(id.x + 1, id.y, id.z + 1)] -= delta_s;
+    gridBuffer[GetGridIndex(id.x + 1, id.y, id.z)] -= delta_s;
+    gridBuffer[GetGridIndex(id.x, id.y + 1, id.z)] -= delta_s;
+    gridBuffer[GetGridIndex(id.x, id.y + 1, id.z + 1)] -= delta_s;
+    gridBuffer[GetGridIndex(id.x + 1, id.y + 1, id.z + 1)] -= delta_s;
+    gridBuffer[GetGridIndex(id.x + 1, id.y + 1, id.z)] -= delta_s;
 }
 
 float L(HydroCell cell, float3 pos)

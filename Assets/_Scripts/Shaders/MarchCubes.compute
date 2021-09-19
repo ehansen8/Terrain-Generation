@@ -308,7 +308,7 @@ float3 increments;
 bool interpolate;
 int3 gridPosOffset;
 
-StructuredBuffer<float4> gridBuffer;        // Input:[1,2,3]
+StructuredBuffer<float> gridBuffer;        // Input:[1,2,3]
 RWStructuredBuffer<float3> normalBuffer;    // Output:[1], Input:[2]
 RWStructuredBuffer<Edges> vertexBuffer;     // Output:[2], Input:[3]
 AppendStructuredBuffer<Triangle> triBuffer; // Output:[3]
@@ -323,20 +323,25 @@ int GetGridIndex(int3 pos, int res)
     return pos.x + (pos.y * res) + (pos.z * res * res);
 }
 
-Vertex VertexInterp(int p0_idx, int p1_idx, int n0_idx, int n1_idx)
+float3 ScalePosition(float3 indices)
 {
-    float4 p0 = gridBuffer[p0_idx];
-    float4 p1 = gridBuffer[p1_idx];
-    float3 n0 = normalBuffer[n0_idx];
-    float3 n1 = normalBuffer[n1_idx];
+    return start + (increments * indices);
+}
+
+Vertex VertexInterp(int3 p0_idx, int3 p1_idx, int3 n0_idx, int3 n1_idx)
+{
+    float p0 = gridBuffer[GetGridIndex(p0_idx, gridRes)];
+    float p1 = gridBuffer[GetGridIndex(p1_idx, gridRes)];
+    float3 n0 = normalBuffer[GetGridIndex(n0_idx, chunk_grid_res)];
+    float3 n1 = normalBuffer[GetGridIndex(n1_idx, chunk_grid_res)];
 
     float mu = 0.5;
 
     if (interpolate)
-        mu = (iso - p0.w) / (p1.w - p0.w);
+        mu = (iso - p0) / (p1 - p0);
     
     Vertex v;
-    v.position = lerp(p0, p1, mu).xyz;
+    v.position = ScalePosition(lerp(p0_idx, p1_idx, mu));
     v.normal = lerp(n0, n1, mu);
 
     return v;
@@ -347,14 +352,14 @@ float3 N(int3 pos)
     float2 ix;
     float2 iy;
     float2 iz;
-    ix.x = gridBuffer[GetGridIndex(pos + int3(1, 0, 0), gridRes)].w;
-    ix.y = gridBuffer[GetGridIndex(pos + int3(-1, 0, 0), gridRes)].w;
+    ix.x = gridBuffer[GetGridIndex(pos + int3(1, 0, 0), gridRes)];
+    ix.y = gridBuffer[GetGridIndex(pos + int3(-1, 0, 0), gridRes)];
 
-    iy.x = gridBuffer[GetGridIndex(pos + int3(0, 1, 0), gridRes)].w;
-    iy.y = gridBuffer[GetGridIndex(pos + int3(0, -1, 0), gridRes)].w;
+    iy.x = gridBuffer[GetGridIndex(pos + int3(0, 1, 0), gridRes)];
+    iy.y = gridBuffer[GetGridIndex(pos + int3(0, -1, 0), gridRes)];
 
-    iz.x = gridBuffer[GetGridIndex(pos + int3(0, 0, 1), gridRes)].w;
-    iz.y = gridBuffer[GetGridIndex(pos + int3(0, 0, -1), gridRes)].w;
+    iz.x = gridBuffer[GetGridIndex(pos + int3(0, 0, 1), gridRes)];
+    iz.y = gridBuffer[GetGridIndex(pos + int3(0, 0, -1), gridRes)];
 
     return -1 * normalize(float3(ix.x-ix.y, iy.x-iy.y, iz.x-iz.y));
 }
@@ -365,7 +370,7 @@ int CalcCubeIndex(Cell cell)
     [loop]for (int i = 0; i < 8; i++)
     {
         // condition will eval to 0 or 1, 0 has no affect, 1 will index at the appropriate location;
-        cubeIndex |= (gridBuffer[cell.corners[i]].w > iso) << i;
+        cubeIndex |= (gridBuffer[cell.corners[i]] > iso) << i;
     }
 
     return cubeIndex;
@@ -428,22 +433,10 @@ void CalculateVertices(int3 local_id : SV_DispatchThreadID)
     int3 id = local_id + gridPosOffset;
     int GI = GetGridIndex(local_id, chunk_grid_res);
 
-    int4 p;
-    p.w = GetGridIndex(id.x, id.y, id.z, gridRes);
-    p.x = GetGridIndex(id.x + 1, id.y, id.z, gridRes);
-    p.y = GetGridIndex(id.x, id.y + 1, id.z, gridRes);
-    p.z = GetGridIndex(id.x, id.y, id.z + 1, gridRes);
-
-    int4 n;
-    n.w = GetGridIndex(local_id.x, local_id.y, local_id.z, chunk_grid_res);
-    n.x = GetGridIndex(local_id.x + 1, local_id.y, local_id.z, chunk_grid_res);
-    n.y = GetGridIndex(local_id.x, local_id.y + 1, local_id.z, chunk_grid_res);
-    n.z = GetGridIndex(local_id.x, local_id.y, local_id.z + 1, chunk_grid_res);
-
     Edges edges;
-    edges.vertices[0] = VertexInterp(p.w, p.x , n.w, n.x);
-    edges.vertices[1] = VertexInterp(p.w, p.y, n.w, n.y);
-    edges.vertices[2] = VertexInterp(p.w, p.z, n.w, n.z);
+    edges.vertices[0] = VertexInterp(id, id + int3(1, 0, 0), local_id, local_id + int3(1, 0, 0));
+    edges.vertices[1] = VertexInterp(id, id + int3(0, 1, 0), local_id, local_id + int3(0, 1, 0));
+    edges.vertices[2] = VertexInterp(id, id + int3(0, 0, 1), local_id, local_id + int3(0, 0, 1));
 
     vertexBuffer[GI] = edges;
 }
