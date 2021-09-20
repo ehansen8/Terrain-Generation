@@ -4,13 +4,13 @@ using UnityEngine;
 
 public struct TriStruct
 {
-    public Vertex v1;
-    public Vertex v2;
-    public Vertex v3;
+    public int v1;
+    public int v2;
+    public int v3;
 
     public static int GetSize()
     {
-        return Vertex.GetSize() * 3;
+        return sizeof(int) * 3;
     }
 }
 
@@ -18,10 +18,11 @@ public struct Vertex
 {
     public Vector3 position;
     public Vector3 normal;
+    public int idx;
 
     public static int GetSize()
     {
-        return sizeof(float) * 3 * 2;
+        return (sizeof(float) * 3 * 2) + sizeof(int) ;
     }
 };
 

@@ -39,8 +39,8 @@ public class MeshBuilder
         if (use32IndexFormat)
             mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
 
-        var tris = meshShader.GetTriangles(chunk);
-        ConvertTrisToMesh(tris, ref mesh, parent);
+        var (tris,verts) = meshShader.GetTriangles(chunk);
+        ConvertTrisToMesh(tris, verts, ref mesh, parent);
 
         if (flat_shade)
             mesh.RecalculateNormals();
@@ -48,59 +48,45 @@ public class MeshBuilder
         return mesh;
     }
 
-    private void ConvertTrisToMesh(TriStruct[] tris, ref Mesh mesh, Transform parent)
+    private void ConvertTrisToMesh(TriStruct[] tris, Vertex[] verts, ref Mesh mesh, Transform parent)
     {
         var triLen = tris.Length;
-        var vertLen = triLen * 3;
+        var vertLen = verts.Length;
 
         var vertices = new Vector3[vertLen];
         var normals = new Vector3[vertLen];
         var colors = new Color[vertLen];
-        var triangles = new int[vertLen];
+        var triangles = new int[triLen*3];
 
 
-        for (int j = 0; j < tris.Length; j++)
+        for (int i = 0; i < vertLen; i++)
         {
+            var vertex = verts[i];
+            vertices[i] = parent.InverseTransformPoint(vertex.position);
+            normals[i] = parent.InverseTransformDirection(vertex.normal);
+            colors[i] = (EvalVertColor(vertex));
+        }
+
+        for (int j = 0; j < triLen; j++)
+        {
+            var i = j * 3;
             TriStruct tri = tris[j];
-
-            int i = j * 3;
-
-            vertices[i] = parent.InverseTransformPoint(tri.v1.position);
-
-            colors[i] = (EvalVertColor(tri.v1));
-
-
-            vertices[i + 1] = parent.InverseTransformPoint(tri.v2.position);
-
-            colors[i + 1] = (EvalVertColor(tri.v2));
-
-
-            vertices[i + 2] = parent.InverseTransformPoint(tri.v3.position);
-
-            colors[i + 2] = (EvalVertColor(tri.v3));
-
 
             if (invert_normals)
             {
-                triangles[i] = (i + 2);
-                triangles[i + 1] = (i + 1);
-                triangles[i + 2] = (i);
-
-                normals[i] = parent.InverseTransformDirection(tri.v1.normal.normalized);
-                normals[i + 1] = parent.InverseTransformDirection(tri.v2.normal.normalized);
-                normals[i + 2] = parent.InverseTransformDirection(tri.v3.normal.normalized);
+                triangles[i] = tri.v3;
+                triangles[i + 1] = tri.v2;
+                triangles[i + 2] = tri.v1;
 
             }
             else
             {
-                triangles[i] = (i);
-                triangles[i + 1] = (i + 1);
-                triangles[i + 2] = (i + 2);
-
-                normals[i] = parent.InverseTransformDirection(tri.v1.normal.normalized);
-                normals[i + 1] = parent.InverseTransformDirection(tri.v2.normal.normalized);
-                normals[i + 2] = parent.InverseTransformDirection(tri.v3.normal.normalized);
+                triangles[i] = tri.v1;
+                triangles[i + 1] = tri.v2;
+                triangles[i + 2] = tri.v3;
+            
             }
+            
         }
         mesh.SetVertices(vertices);
         mesh.SetNormals(normals);

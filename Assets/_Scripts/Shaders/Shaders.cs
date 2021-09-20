@@ -149,7 +149,7 @@ public class MeshShader : ShaderData
     /// <param name="chunk_grid_res"></param>
     /// <param name="grid_offset"></param>
     /// <returns></returns>
-    public TriStruct[] GetTriangles(Chunk chunk)
+    public (TriStruct[],Vertex[]) GetTriangles(Chunk chunk)
     {
         //Set up Instance Buffers
         var vert_len = (int)Mathf.Pow(chunk.grid_res, 3);
@@ -158,27 +158,42 @@ public class MeshShader : ShaderData
         var vertexBuffer = new ComputeBuffer(vert_len, EdgeStruct.GetSize());
         var normalBuffer = new ComputeBuffer(vert_len, sizeof(float) * 3);
         var triBuffer = new ComputeBuffer(tri_len, TriStruct.GetSize(), ComputeBufferType.Append);
+        var ordered_vertex_buffer = new ComputeBuffer(vert_len, Vertex.GetSize());
+        var vCount = new ComputeBuffer(1, sizeof(int));
 
-        InitializeInstanceVariables(chunk.grid_offset, chunk.res, normalBuffer, vertexBuffer, triBuffer);
+
+        InitializeInstanceVariables(chunk.grid_offset, chunk.res, normalBuffer, vertexBuffer, triBuffer, ordered_vertex_buffer, vCount);
 
         //Always reset this to zero before Dispatch()
         triBuffer.SetCounterValue(0);
+        vCount.SetData(new int[1] { 0 });
         DispatchShader(chunk.res, chunk.grid_res);
 
         //Get Data
         var triangles = new TriStruct[GetTriangleCount(triBuffer)];
+        var vertices = new Vertex[GetVertexCount(vCount)];
+
+        ordered_vertex_buffer.GetData(vertices);
         triBuffer.GetData(triangles);
 
         //Release used buffers
-        //FDebugVerts(vertexBuffer);
+        //DebugVerts(vertexBuffer);
         normalBuffer.Release();
         vertexBuffer.Release();
         triBuffer.Release();
+        ordered_vertex_buffer.Release();
+        vCount.Release();
 
-        return triangles;
+        return (triangles, vertices);
     }
 
-    private void InitializeInstanceVariables(int[] grid_offset, int chunk_res, ComputeBuffer normalBuffer, ComputeBuffer vertexBuffer, ComputeBuffer triBuffer)
+    private void InitializeInstanceVariables(int[] grid_offset, 
+                                             int chunk_res, 
+                                             ComputeBuffer normalBuffer,
+                                             ComputeBuffer vertexBuffer, 
+                                             ComputeBuffer triBuffer, 
+                                             ComputeBuffer ordered_vertex_buffer,
+                                             ComputeBuffer vCount)
     {
         //Set instance variables
         shader.SetInts(Shader.PropertyToID("gridPosOffset"), grid_offset);
@@ -196,6 +211,8 @@ public class MeshShader : ShaderData
         //Pass 3
         shader.SetBuffer(tri_kernel, "vertexBuffer", vertexBuffer);
         shader.SetBuffer(tri_kernel, "triBuffer", triBuffer);
+        shader.SetBuffer(tri_kernel, "ordered_vertex_buffer", ordered_vertex_buffer);
+        shader.SetBuffer(tri_kernel, "vCount", vCount);
     }
 
     private void DispatchShader(int chunk_res, int chunk_grid_res)
@@ -220,6 +237,14 @@ public class MeshShader : ShaderData
         countBuffer.GetData(counter);
 
         countBuffer.Release();
+
+        return counter[0];
+    }
+
+    private int GetVertexCount(ComputeBuffer vCount)
+    {
+        int[] counter = new int[1] { 0 };
+        vCount.GetData(counter);
 
         return counter[0];
     }

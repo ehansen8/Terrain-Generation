@@ -282,6 +282,7 @@ struct Vertex
 {
     float3 position;
     float3 normal;
+    int idx;
 };
 
 struct Edges
@@ -291,7 +292,7 @@ struct Edges
 
 struct Triangle
 {
-    Vertex vertices[3];
+    int vertices[3];
 };
 
 struct Cell
@@ -308,10 +309,14 @@ float3 increments;
 bool interpolate;
 int3 gridPosOffset;
 
+RWStructuredBuffer<int> vCount;
+RWStructuredBuffer<Vertex> ordered_vertex_buffer;
 StructuredBuffer<float> gridBuffer;        // Input:[1,2,3]
 RWStructuredBuffer<float3> normalBuffer;    // Output:[1], Input:[2]
 RWStructuredBuffer<Edges> vertexBuffer;     // Output:[2], Input:[3]
 AppendStructuredBuffer<Triangle> triBuffer; // Output:[3]
+
+
 
 int GetGridIndex(int x, int y, int z, int res)
 {
@@ -342,7 +347,8 @@ Vertex VertexInterp(int3 p0_idx, int3 p1_idx, int3 n0_idx, int3 n1_idx)
     
     Vertex v;
     v.position = ScalePosition(lerp(p0_idx, p1_idx, mu));
-    v.normal = lerp(n0, n1, mu);
+    v.normal = normalize(lerp(n0, n1, mu));
+    v.idx = -1;
 
     return v;
 }
@@ -376,11 +382,37 @@ int CalcCubeIndex(Cell cell)
     return cubeIndex;
 }
 
+// returns vertex index;
+int AtomicAppendVertex(int edge_idx, int edge_dir )
+{
+    // Check lock
+    int prev_idx = -1;
+    [loop] while (prev_idx <= -1)
+    {
+        InterlockedCompareExchange(vertexBuffer[edge_idx].vertices[edge_dir].idx, -1, -2, prev_idx);
+        
+        if (prev_idx > -1)  // Vertex has already been placed
+            return prev_idx;
+        else if (prev_idx == -2) // Vertex has a lock on it
+            continue;
+        else
+        {
+            //Case where prev_idx was -1, means we have lock
+            InterlockedAdd(vCount[0], 1, prev_idx);
+            Vertex v = vertexBuffer[edge_idx].vertices[edge_dir];
+            v.idx = prev_idx;
+            vertexBuffer[edge_idx].vertices[edge_dir] = v;
+            ordered_vertex_buffer[prev_idx] = v;
+        }
+    }
+    return prev_idx;
+}
+
 void CalcTriangles(int cubeIndex, int3 chunk_id)
 {
     [loop] for (int i = 0; i < 16; i+=3)
     {
-        Vertex v[3];
+        int v[3];
         for (int k = 0; k < 3; k++)
         {
             int edgeIdx = triTable[cubeIndex][i+k];
@@ -391,7 +423,7 @@ void CalcTriangles(int cubeIndex, int3 chunk_id)
             int3 chunkIdxs = chunk_id + localIdxs.xyz;
             int vertexBufferIdx = GetGridIndex(chunkIdxs, chunk_grid_res);
             //Gets the edges of that point, then the edge (vertex) in direction w
-            v[k] = vertexBuffer[vertexBufferIdx].vertices[localIdxs.w];
+            v[k] = AtomicAppendVertex(vertexBufferIdx, localIdxs.w);
         }
             
         Triangle t;
