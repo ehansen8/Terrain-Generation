@@ -14,13 +14,23 @@ public class Planet: MonoBehaviour
     public float snowcap_radius;
 
     // Noise parameters
+    [HideInInspector]
     public float frequency;
+
+    public float size_frequency_ratio;
+    [Range(1,8)]
     public int octaves;
+    [Range(1, 3)]
     public float lacunarity;
+    [Range(0, 1)]
     public float persistance;
     public Vector3 offset;
+    [Range(0.1f, 5)]
     public float asymptote;
+    [Range(0.01f, 0.5f)]
     public float curvature;
+    [Range(0, 3)]
+    public float mod_offset;
     
     //Display Parameters
     public int global_res;
@@ -45,9 +55,17 @@ public class Planet: MonoBehaviour
 
     public void Awake()
     {
+        frequency = radius / size_frequency_ratio;
         atmosphere = radius / 2f;
         bounds = Vector3.one * (radius + atmosphere) * 2;
         start_coordinates = coordinates - bounds / 2;
+    }
+
+    private void Update()
+    {
+        frequency = radius / size_frequency_ratio;
+        asymptote = curvature +2f;
+        mod_offset = curvature + 0.9f;
     }
     public void ConfigurePlanet(int global_res, int global_grid_res, float iso, bool interpolate)
     {

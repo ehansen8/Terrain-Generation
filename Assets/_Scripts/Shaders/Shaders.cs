@@ -68,8 +68,9 @@ public class GridShader : ShaderData
         shader.SetFloat(Shader.PropertyToID("persistance"), planet.persistance);
         shader.SetFloats(Shader.PropertyToID("offset"), new float[] { planet.offset.x, planet.offset.y, planet.offset.z });
         shader.SetFloat(Shader.PropertyToID("planet_radius"), planet.radius);
-        shader.SetFloat(Shader.PropertyToID("curvature"), planet.curvature);
         shader.SetFloat(Shader.PropertyToID("asymptote"), planet.asymptote);
+        shader.SetFloat(Shader.PropertyToID("curvature"), planet.curvature);
+        shader.SetFloat(Shader.PropertyToID("mod_offset"), planet.mod_offset);
 
         InitializeBuffers();
     }
