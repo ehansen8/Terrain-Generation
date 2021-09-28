@@ -363,7 +363,6 @@ MigrationBackup/
 FodyWeavers.xsd
 /Assets/Scenes
 /Assets/Surface
-/Assets
 /Library
 /ProjectSettings
 /Temp
@@ -390,3 +389,5 @@ FodyWeavers.xsd
 /Assembly-CSharp.Player.csproj
 /Assembly-CSharp.csproj
 /.vsconfig
+
+*.prefab
