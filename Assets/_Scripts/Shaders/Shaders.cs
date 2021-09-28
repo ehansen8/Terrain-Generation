@@ -108,9 +108,11 @@ public class GridShader : ShaderData
 public class MeshShader : ShaderData
 {
     public ComputeBuffer gridBuffer;
+    
     public int vertex_kernel;
     public int normal_kernel;
     public int tri_kernel;
+    public int chunk_kernel;
     public float iso;
     public bool interpolate;
 
@@ -120,7 +122,6 @@ public class MeshShader : ShaderData
         this.shader = shader;
         this.iso = iso;
         this.interpolate = interpolate;
-
     }
 
     public void Initialize(int global_res, int global_grid_res, Vector3 gridIncrements, Vector3 startCoordinates)
@@ -132,29 +133,14 @@ public class MeshShader : ShaderData
 
         shader.SetFloat(Shader.PropertyToID("iso"), iso);
         shader.SetBool(Shader.PropertyToID("interpolate"), interpolate);
-
-        InitializeConstantBuffers();
     }
 
-    private void InitializeConstantBuffers()
-    {
-        shader.SetBuffer(tri_kernel, "gridBuffer", gridBuffer);
-        shader.SetBuffer(normal_kernel, "gridBuffer", gridBuffer);
-        shader.SetBuffer(vertex_kernel, "gridBuffer", gridBuffer);
-    }
-
-    /// <summary>
     /// Gets the list of triangles that make up the mesh for the passed in chunk
-    /// </summary>
-    /// <param name="chunk_res"></param>
-    /// <param name="chunk_grid_res"></param>
-    /// <param name="grid_offset"></param>
-    /// <returns></returns>
-    public (TriStruct[],Vertex[]) GetTriangles(Chunk chunk)
+    public (TriStruct[],Vertex[]) GetTriangles(Chunk chunk, ComputeBuffer chunkBuffer)
     {
         //Set up Instance Buffers
-        var vert_len = (int)Mathf.Pow(chunk.grid_res, 3);
-        var tri_len = (int)Mathf.Pow(chunk.res, 3) * 5;
+        var vert_len = (int)Mathf.Pow(chunk.final_grid_res, 3);
+        var tri_len = (int)Mathf.Pow(chunk.final_res, 3) * 5;
 
         var vertexBuffer = new ComputeBuffer(vert_len, EdgeStruct.GetSize());
         var normalBuffer = new ComputeBuffer(vert_len, sizeof(float) * 3);
@@ -163,12 +149,13 @@ public class MeshShader : ShaderData
         var vCount = new ComputeBuffer(1, sizeof(int));
 
 
-        InitializeInstanceVariables(chunk.grid_offset, chunk.res, normalBuffer, vertexBuffer, triBuffer, ordered_vertex_buffer, vCount);
+        this.gridIncrements = chunk.increments;
+        InitializeInstanceVariables(chunk.pos_offset, chunk.final_grid_res, normalBuffer, vertexBuffer, triBuffer, ordered_vertex_buffer, vCount, chunkBuffer);
 
         //Always reset this to zero before Dispatch()
         triBuffer.SetCounterValue(0);
         vCount.SetData(new int[1] { 0 });
-        DispatchShader(chunk.res, chunk.grid_res);
+        DispatchShader(chunk.final_res);
 
         //Get Data
         var triangles = new TriStruct[GetTriangleCount(triBuffer)];
@@ -179,46 +166,55 @@ public class MeshShader : ShaderData
 
         //Release used buffers
         //DebugVerts(vertexBuffer);
+        //DebugChunk(chunkBuffer);
         normalBuffer.Release();
         vertexBuffer.Release();
         triBuffer.Release();
         ordered_vertex_buffer.Release();
         vCount.Release();
+        chunkBuffer.Release();
 
         return (triangles, vertices);
     }
 
-    private void InitializeInstanceVariables(int[] grid_offset, 
-                                             int chunk_res, 
+    private void InitializeInstanceVariables(float[] pos_offset, 
+                                             int chunk_grid_res,
                                              ComputeBuffer normalBuffer,
                                              ComputeBuffer vertexBuffer, 
                                              ComputeBuffer triBuffer, 
                                              ComputeBuffer ordered_vertex_buffer,
-                                             ComputeBuffer vCount)
+                                             ComputeBuffer vCount,
+                                             ComputeBuffer chunkBuffer)
     {
+
         //Set instance variables
-        shader.SetInts(Shader.PropertyToID("gridPosOffset"), grid_offset);
-        shader.SetInt(Shader.PropertyToID("chunk_res"), chunk_res);
-        shader.SetInt(Shader.PropertyToID("chunk_grid_res"), chunk_res +1);
+        shader.SetFloats(Shader.PropertyToID("gridPosOffset"), pos_offset);
+        shader.SetInt(Shader.PropertyToID("chunk_grid_res"), chunk_grid_res);
+
+        //Override this one
+        shader.SetFloats(Shader.PropertyToID("increments"), new float[] { gridIncrements.x, gridIncrements.y, gridIncrements.z });
 
         // Set instance Buffers
-        //Pass 1
+        //Pass 2
         shader.SetBuffer(normal_kernel, "normalBuffer", normalBuffer);
+        shader.SetBuffer(normal_kernel, "chunkBuffer", chunkBuffer);
 
         //Pass 2
         shader.SetBuffer(vertex_kernel, "normalBuffer", normalBuffer);
         shader.SetBuffer(vertex_kernel, "vertexBuffer", vertexBuffer);
+        shader.SetBuffer(vertex_kernel, "chunkBuffer", chunkBuffer);
 
         //Pass 3
         shader.SetBuffer(tri_kernel, "vertexBuffer", vertexBuffer);
         shader.SetBuffer(tri_kernel, "triBuffer", triBuffer);
         shader.SetBuffer(tri_kernel, "ordered_vertex_buffer", ordered_vertex_buffer);
         shader.SetBuffer(tri_kernel, "vCount", vCount);
+        shader.SetBuffer(tri_kernel, "chunkBuffer", chunkBuffer);
     }
 
-    private void DispatchShader(int chunk_res, int chunk_grid_res)
+    private void DispatchShader(int chunk_res)
     {
-        int vertex_groups = (chunk_grid_res+7) / 8;
+        int vertex_groups = (chunk_res / 8) + 1;
         int mc_groups = chunk_res / 8;
 
         shader.Dispatch(normal_kernel, vertex_groups, vertex_groups, vertex_groups);
@@ -255,11 +251,51 @@ public class MeshShader : ShaderData
         var data = new Vector3[normalBuffer.count];
         normalBuffer.GetData(data);
     }
+    private void DebugChunk(ComputeBuffer buffer)
+    {
+        var data = new float[buffer.count];
+        var grid = new float[gridBuffer.count];
+        gridBuffer.GetData(grid);
+        buffer.GetData(data);
+        var combo = new List<Dictionary<string,object>>();
+        for (int i = 0; i < data.Length; i++)
+        {
+
+            var w = data[i];
+            var z = i / (17 * 17);
+            var temp_i = i - z*(17*17);
+            var y = temp_i / 17;
+            var x = temp_i - y * 17;
+            
+            var new_id = new Vector3(x, y, z);
+            var thread_id = new Vector3(x / 2, y / 2, z / 2);
+            var dir = new_id - thread_id * 2;
+
+            var lerp = thread_id + dir;
+            var lerp_id = lerp.x + lerp.y * 9 + lerp.z * (9 * 9);
+            var grid_id = thread_id.x + thread_id.y * 9 + thread_id.z * (9 * 9);
+            var d = new Dictionary<string, object>
+            {
+                {"phi", w },
+                {"new_id", new_id },
+                {"thread_id", thread_id},
+                {"dir", dir },
+                {"lerp", lerp},
+                {"chunk_idx", i },
+                {"grid_idx", grid_id },
+                {"lerp_idx", lerp_id },
+                {"grid_val", grid[(int)grid_id] },
+                {"lerp_val", grid[(int)lerp_id] },
+
+            };
+
+            combo.Add(d);
+        }
+
+    }
 
     private void DebugVerts(ComputeBuffer vertexBuffer)
     {
-        var g = new Vector4[gridBuffer.count];
-        gridBuffer.GetData(g);
         var data = new EdgeStruct[vertexBuffer.count];
         vertexBuffer.GetData(data);
     }
@@ -343,4 +379,188 @@ public class ErosionSimulation : ShaderData
     }
 
 }
+
+// Given some chunk parameters -> size, resolution, etc... produce a chunk grid for the mesh builder to operate on
+// Main functions are to reduce the passed data to the size required for the mesh.
+// Will be able to increase resolution from the grid data, and add additional noise / smoothing.
+public class ChunkShader : ShaderData
+{
+    public int convert_kernel;
+    public int resolution_kernel;
+    public int noise_kernel;
+    public ComputeBuffer gridBuffer;
+    public Planet planet;
+
+    public ChunkShader(Planet planet, ComputeShader shader)
+    {
+        this.planet = planet;
+        this.gridBuffer = planet.grid.gridBuffer;
+        this.shader = shader;
+    }
+
+    public void Initialize(int global_res, 
+                           int global_grid_res, 
+                           Vector3 gridIncrements, 
+                           Vector3 startCoordinates)
+    {
+        InitializeBase(global_res, global_grid_res, gridIncrements, startCoordinates);
+
+        // Set Kernels
+        convert_kernel = shader.FindKernel("ConvertGridToChunk");
+        resolution_kernel = shader.FindKernel("IncreaseResolution");
+        noise_kernel = shader.FindKernel("AddNoise");
+
+        InitializeBuffers();
+    }
+
+    private void InitializeBuffers()
+    {
+        shader.SetBuffer(convert_kernel, "gridBuffer", gridBuffer);
+    }
+
+    public ComputeBuffer GetChunk(Chunk chunk)
+    {
+        var chunk_len = (int)Mathf.Pow(chunk.initial_grid_res, 3);
+        InitializeInstanceVariables(chunk);
+        var chunkBuffer = new ComputeBuffer(chunk_len, sizeof(float));
+
+        // We now have chunk
+        ConvertToChunk(chunkBuffer, chunk.initial_grid_res);
+        chunkBuffer = IncreaseResolution(chunkBuffer, chunk);
+        if(chunk.addNoise)
+            chunkBuffer = AddNoise(chunkBuffer, chunk.final_grid_res);
+
+        //DebugChunk(chunkBuffer, chunk);
+
+        return chunkBuffer;
+    }
+
+    private void InitializeInstanceVariables(Chunk chunk)
+    {
+
+        //Set instance variables
+        shader.SetInts(Shader.PropertyToID("grid_offset"), chunk.grid_offset);
+        shader.SetFloats(Shader.PropertyToID("pos_offset"), chunk.pos_offset);
+        shader.SetFloats(Shader.PropertyToID("increments"), new float[] {chunk.increments.x,
+                                                                         chunk.increments.y,
+                                                                         chunk.increments.z });
+
+    }
+    private void ConvertToChunk(ComputeBuffer chunkBuffer, int res)
+    {
+        int groups = (res / 8) + 1;
+
+        shader.SetInt("target_grid_res", res);
+        shader.SetBuffer(convert_kernel, "newChunkBuffer", chunkBuffer);
+        shader.Dispatch(convert_kernel, groups, groups, groups);
+    }
+
+    private ComputeBuffer IncreaseResolution(ComputeBuffer oldChunkbuffer, Chunk chunk)
+    {
+        var initial_res = chunk.initial_res;
+        // res_factor is how many times the resolution is doubled
+        for(int i = 0; i < chunk.res_factor; i++)
+        {
+            var target_grid_res = (initial_res * 2)+1;
+            var newChunkBuffer = CreateNewBuffer(target_grid_res);
+            SetResolutionDispatchVariables(initial_res, target_grid_res, oldChunkbuffer, newChunkBuffer);
+
+            var groups = (initial_res / 8) + 1;
+            shader.Dispatch(resolution_kernel, groups, groups, groups);
+            oldChunkbuffer.Release();
+            oldChunkbuffer = newChunkBuffer;
+            initial_res *= 2;
+        }
+
+        return oldChunkbuffer;
+    }
+
+    private ComputeBuffer CreateNewBuffer(int target_grid_res)
+    {
+        int len = (int)Mathf.Pow(target_grid_res, 3);
+        return new ComputeBuffer(len, sizeof(float));
+    }
+
+    private void SetResolutionDispatchVariables(int initial_res, int target_grid_res, ComputeBuffer o, ComputeBuffer n)
+    {
+        shader.SetInt(Shader.PropertyToID("initial_res"), initial_res);
+        shader.SetInt(Shader.PropertyToID("initial_grid_res"), initial_res+1);
+        shader.SetInt(Shader.PropertyToID("target_grid_res"), target_grid_res);
+        shader.SetBuffer(resolution_kernel, "oldChunkBuffer", o);
+        shader.SetBuffer(resolution_kernel, "newChunkBuffer", n);
+    }
+
+    private ComputeBuffer AddNoise(ComputeBuffer chunkBuffer, int target_grid_res)
+    {
+        shader.SetInt("target_grid_res", target_grid_res);
+        shader.SetBuffer(noise_kernel, "newChunkBuffer", chunkBuffer);
+        SetNoiseVariables(planet.parameters);
+
+        var groups = (target_grid_res / 8)+1;
+        shader.Dispatch(noise_kernel, groups, groups, groups);
+
+        return chunkBuffer;
+    }
+
+    private void SetNoiseVariables(PlanetParameters p)
+    {
+        // Initialize Grid Specific Parameters
+        shader.SetFloat(Shader.PropertyToID("freq"), p.frequency*2);
+        shader.SetInt(Shader.PropertyToID("octaves"), p.octaves);
+        shader.SetFloat(Shader.PropertyToID("lacunarity"), p.lacunarity);
+        shader.SetFloat(Shader.PropertyToID("persistance"), p.persistance);
+        shader.SetFloats(Shader.PropertyToID("offset"), new float[] { p.offset.x, p.offset.y, p.offset.z });
+        shader.SetFloat(Shader.PropertyToID("planet_radius"), p.radius);
+        shader.SetFloat(Shader.PropertyToID("asymptote"), p.asymptote);
+        shader.SetFloat(Shader.PropertyToID("curvature"), p.curvature);
+        shader.SetFloat(Shader.PropertyToID("mod_offset"), p.mod_offset);
+        shader.SetFloat(Shader.PropertyToID("tempMult"), p.initial_amplitude);
+        shader.SetFloat(Shader.PropertyToID("clampRange"), p.clampRange);
+    }
+
+    private void DebugChunk(ComputeBuffer buffer, Chunk chunk)
+    {
+        var data = new float[buffer.count];
+        var grid = new float[gridBuffer.count];
+        gridBuffer.GetData(grid);
+        buffer.GetData(data);
+        var combo = new List<Dictionary<string, object>>();
+        for (int i = 0; i < data.Length; i++)
+        {
+
+            var w = data[i];
+            var z = i / (chunk.final_grid_res * chunk.final_grid_res);
+            var temp_i = i - z * (chunk.final_grid_res * chunk.final_grid_res);
+            var y = temp_i / chunk.final_grid_res;
+            var x = temp_i - y * chunk.final_grid_res;
+
+            var new_id = new Vector3(x, y, z);
+            var thread_id = new Vector3(x / 2, y / 2, z / 2);
+            var dir = new_id - thread_id * 2;
+
+            var lerp = thread_id + dir;
+            var lerp_id = lerp.x + lerp.y * 9 + lerp.z * (9 * 9);
+            var grid_id = thread_id.x + thread_id.y * 9 + thread_id.z * (9 * 9);
+            var d = new Dictionary<string, object>
+            {
+                {"phi", w },
+                {"new_id", new_id },
+                {"thread_id", thread_id},
+                {"dir", dir },
+                {"lerp", lerp},
+                {"chunk_idx", i },
+                {"grid_idx", grid_id },
+                {"lerp_idx", lerp_id },
+                {"grid_val", grid[(int)grid_id] },
+                {"lerp_val", grid[(int)lerp_id] },
+
+            };
+
+            combo.Add(d);
+        }
+
+    }
+}
+
+
 

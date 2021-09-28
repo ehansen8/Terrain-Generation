@@ -300,27 +300,27 @@ struct Cell
     int corners[8];
 };
 
+
+
 float iso;
-int chunk_res;
 int chunk_grid_res;
 int gridRes;
 float3 start;
 float3 increments;
 bool interpolate;
-int3 gridPosOffset;
+float3 gridPosOffset;
 
 RWStructuredBuffer<int> vCount;
 RWStructuredBuffer<Vertex> ordered_vertex_buffer;
+RWStructuredBuffer<float> chunkBuffer;
 StructuredBuffer<float> gridBuffer;        // Input:[1,2,3]
 RWStructuredBuffer<float3> normalBuffer;    // Output:[1], Input:[2]
 RWStructuredBuffer<Edges> vertexBuffer;     // Output:[2], Input:[3]
 AppendStructuredBuffer<Triangle> triBuffer; // Output:[3]
 
-
-
 int GetGridIndex(int x, int y, int z, int res)
 {
-    return x + (y*res) + (z*res*res);
+    return x + (y * res) + (z * res * res);
 }
 
 int GetGridIndex(int3 pos, int res)
@@ -330,13 +330,14 @@ int GetGridIndex(int3 pos, int res)
 
 float3 ScalePosition(float3 indices)
 {
-    return start + (increments * indices);
+    //without gridPosOffset, the chunks all start in the same quadrant
+    return gridPosOffset + (increments * indices);
 }
 
 Vertex VertexInterp(int3 p0_idx, int3 p1_idx, int3 n0_idx, int3 n1_idx)
 {
-    float p0 = gridBuffer[GetGridIndex(p0_idx, gridRes)];
-    float p1 = gridBuffer[GetGridIndex(p1_idx, gridRes)];
+    float p0 = chunkBuffer[GetGridIndex(p0_idx, chunk_grid_res)];
+    float p1 = chunkBuffer[GetGridIndex(p1_idx, chunk_grid_res)];
     float3 n0 = normalBuffer[GetGridIndex(n0_idx, chunk_grid_res)];
     float3 n1 = normalBuffer[GetGridIndex(n1_idx, chunk_grid_res)];
 
@@ -358,14 +359,14 @@ float3 N(int3 pos)
     float2 ix;
     float2 iy;
     float2 iz;
-    ix.x = gridBuffer[GetGridIndex(pos + int3(1, 0, 0), gridRes)];
-    ix.y = gridBuffer[GetGridIndex(pos + int3(-1, 0, 0), gridRes)];
+    ix.x = chunkBuffer[GetGridIndex(pos + int3(1, 0, 0), chunk_grid_res)];
+    ix.y = chunkBuffer[GetGridIndex(pos + int3(-1, 0, 0), chunk_grid_res)];
 
-    iy.x = gridBuffer[GetGridIndex(pos + int3(0, 1, 0), gridRes)];
-    iy.y = gridBuffer[GetGridIndex(pos + int3(0, -1, 0), gridRes)];
+    iy.x = chunkBuffer[GetGridIndex(pos + int3(0, 1, 0), chunk_grid_res)];
+    iy.y = chunkBuffer[GetGridIndex(pos + int3(0, -1, 0), chunk_grid_res)];
 
-    iz.x = gridBuffer[GetGridIndex(pos + int3(0, 0, 1), gridRes)];
-    iz.y = gridBuffer[GetGridIndex(pos + int3(0, 0, -1), gridRes)];
+    iz.x = chunkBuffer[GetGridIndex(pos + int3(0, 0, 1), chunk_grid_res)];
+    iz.y = chunkBuffer[GetGridIndex(pos + int3(0, 0, -1), chunk_grid_res)];
 
     return -1 * normalize(float3(ix.x-ix.y, iy.x-iy.y, iz.x-iz.y));
 }
@@ -376,7 +377,7 @@ int CalcCubeIndex(Cell cell)
     [loop]for (int i = 0; i < 8; i++)
     {
         // condition will eval to 0 or 1, 0 has no affect, 1 will index at the appropriate location;
-        cubeIndex |= (gridBuffer[cell.corners[i]] > iso) << i;
+        cubeIndex |= (chunkBuffer[cell.corners[i]] > iso) << i;
     }
 
     return cubeIndex;
@@ -435,64 +436,59 @@ void CalcTriangles(int cubeIndex, int3 chunk_id)
     }
 }
 
+// TODO: This requires chunk -1 => may need to change chunk kernel slightly
 [numthreads(8, 8, 8)]
-void CalculateNormals(int3 local_id : SV_DispatchThreadID)
+void CalculateNormals(int3 id : SV_DispatchThreadID)
 {
-    if (local_id.x >= chunk_grid_res)
+    if (id.x >= chunk_grid_res)
         return;
-    if (local_id.y >= chunk_grid_res)
+    if (id.y >= chunk_grid_res)
         return;
-    if (local_id.z >= chunk_grid_res)
+    if (id.z >= chunk_grid_res)
         return;
 
-    int3 id = local_id + gridPosOffset;
 
-    int GI = GetGridIndex(local_id, chunk_grid_res);
+    int GI = GetGridIndex(id, chunk_grid_res);
 
     normalBuffer[GI] = N(id);
 }
 
 [numthreads(8, 8, 8)]
-void CalculateVertices(int3 local_id : SV_DispatchThreadID)
+void CalculateVertices(int3 id : SV_DispatchThreadID)
 {
-    if (local_id.x >= chunk_grid_res)
+    if (id.x >= chunk_grid_res)
         return;
-    if (local_id.y >= chunk_grid_res)
+    if (id.y >= chunk_grid_res)
         return;
-    if (local_id.z >= chunk_grid_res)
+    if (id.z >= chunk_grid_res)
         return;
-
-    int3 id = local_id + gridPosOffset;
-    int GI = GetGridIndex(local_id, chunk_grid_res);
+    int GI = GetGridIndex(id, chunk_grid_res);
 
     Edges edges;
-    edges.vertices[0] = VertexInterp(id, id + int3(1, 0, 0), local_id, local_id + int3(1, 0, 0));
-    edges.vertices[1] = VertexInterp(id, id + int3(0, 1, 0), local_id, local_id + int3(0, 1, 0));
-    edges.vertices[2] = VertexInterp(id, id + int3(0, 0, 1), local_id, local_id + int3(0, 0, 1));
+    edges.vertices[0] = VertexInterp(id, id + int3(1, 0, 0), id, id + int3(1, 0, 0));
+    edges.vertices[1] = VertexInterp(id, id + int3(0, 1, 0), id, id + int3(0, 1, 0));
+    edges.vertices[2] = VertexInterp(id, id + int3(0, 0, 1), id, id + int3(0, 0, 1));
 
     vertexBuffer[GI] = edges;
 }
 
 [numthreads(8,8,8)]
-void CalculateTriangles(int3 local_id : SV_DispatchThreadID)
+void CalculateTriangles(int3 id : SV_DispatchThreadID)
 {
-    int3 id = local_id + gridPosOffset;
-    
     Cell cell;
-    cell.corners[0] = GetGridIndex(id.x,   id.y,   id.z, gridRes);
-    cell.corners[1] = GetGridIndex(id.x,   id.y,   id.z+1, gridRes);
-    cell.corners[2] = GetGridIndex(id.x+1, id.y,   id.z+1, gridRes);
-    cell.corners[3] = GetGridIndex(id.x+1, id.y,   id.z, gridRes);
-    cell.corners[4] = GetGridIndex(id.x,   id.y+1, id.z, gridRes);
-    cell.corners[5] = GetGridIndex(id.x,   id.y+1, id.z+1, gridRes);
-    cell.corners[6] = GetGridIndex(id.x+1, id.y+1, id.z+1, gridRes);
-    cell.corners[7] = GetGridIndex(id.x+1, id.y+1, id.z, gridRes);
+    cell.corners[0] = GetGridIndex(id.x,   id.y,   id.z, chunk_grid_res);
+    cell.corners[1] = GetGridIndex(id.x,   id.y,   id.z+1, chunk_grid_res);
+    cell.corners[2] = GetGridIndex(id.x+1, id.y,   id.z+1, chunk_grid_res);
+    cell.corners[3] = GetGridIndex(id.x+1, id.y,   id.z, chunk_grid_res);
+    cell.corners[4] = GetGridIndex(id.x,   id.y+1, id.z, chunk_grid_res);
+    cell.corners[5] = GetGridIndex(id.x,   id.y+1, id.z+1, chunk_grid_res);
+    cell.corners[6] = GetGridIndex(id.x+1, id.y+1, id.z+1, chunk_grid_res);
+    cell.corners[7] = GetGridIndex(id.x+1, id.y+1, id.z, chunk_grid_res);
     
     
     int cubeIndex = CalcCubeIndex(cell);  
-    CalcTriangles(cubeIndex, local_id);
+    CalcTriangles(cubeIndex, id);
 };
-
 
 
 

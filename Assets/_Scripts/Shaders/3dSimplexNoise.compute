@@ -118,6 +118,7 @@ float3 offset;
 float planet_radius;
 float asymptote;
 float curvature;
+float mod_offset;
 
 // Convert indices to actual distances
 float3 ScalePosition(float3 indices)
@@ -153,7 +154,7 @@ float IterateNoise(float3 pos)
     float asy = asymptote;
     float k = curvature;
     float midpoint = planet_radius;
-    float modifier = (asy / (1+exp(-k*(length(pos)-midpoint))))-0.75;
+    float modifier = (asy / (1+exp(-k*(length(pos)-midpoint))))-mod_offset;
 
     // plate region is 
     /*if (length(pos) > planet_radius)
@@ -194,6 +195,42 @@ void SimplexGrid (int3 id : SV_DispatchThreadID)
     gridBuffer[GI] = IterateNoise(pos);
 }
 
+
+HydroCell GetCell(int3 id)
+{
+    HydroCell cell;
+    cell.p[0][0] = gridBuffer[GetGridIndex(id.x, id.y, id.z)];
+    cell.p[0][1] = gridBuffer[GetGridIndex(id.x, id.y, id.z + 1)];
+    cell.p[0][2] = gridBuffer[GetGridIndex(id.x + 1, id.y, id.z + 1)];
+    cell.p[0][3] = gridBuffer[GetGridIndex(id.x + 1, id.y, id.z)];
+    cell.p[1][0] = gridBuffer[GetGridIndex(id.x, id.y + 1, id.z)];
+    cell.p[1][1] = gridBuffer[GetGridIndex(id.x, id.y + 1, id.z + 1)];
+    cell.p[1][2] = gridBuffer[GetGridIndex(id.x + 1, id.y + 1, id.z + 1)];
+    cell.p[1][3] = gridBuffer[GetGridIndex(id.x + 1, id.y + 1, id.z)];
+
+    return cell;
+}
+
+int GetGridIndex(int3 pos, int res)
+{
+    return pos.x + (pos.y * res) + (pos.z * res * res);
+}
+
+float L(HydroCell cell, float3 pos)
+{
+    int3 voxel = int3(pos);
+    float3 frac = pos - voxel;
+
+    float4 ix = lerp(cell.p._m00_m01_m10_m11, cell.p._m03_m02_m13_m12, frac.x);
+    // z=0: x.03, y.12, | z=1: z.47, w.56
+
+    float2 ixz = lerp(ix.xz, ix.yw, frac.z);
+    // y=0: x.0312, | y=1: y.4756
+
+    return lerp(ixz.x, ixz.y, frac.y);
+}
+
+// Trilinear Interpolation of normal
 float3 N(HydroCell cell, float3 pos)
 {
     int3 voxel = int3(pos);
@@ -232,9 +269,6 @@ int3 GetClosestCell(float3 pos)
 }
 
 
-
-
-
 //Can add in speed and rate and other features as well
 float P_min_slope;      // minimum value for h_diff, prevents capacity from getting to close to -
 float P_capacity;
@@ -270,20 +304,7 @@ float3 G(float3 pos)
     return normalize((float3(gridRes-1,gridRes-1,gridRes-1) / 2) - pos);   //(gridRes-1)/2 = 0,0,0 in grid coordinates
 }
 
-HydroCell GetCell(float3 id)
-{
-    HydroCell cell;
-    cell.p[0][0] = gridBuffer[GetGridIndex(id.x, id.y, id.z)];
-    cell.p[0][1] = gridBuffer[GetGridIndex(id.x, id.y, id.z + 1)];
-    cell.p[0][2] = gridBuffer[GetGridIndex(id.x + 1, id.y, id.z + 1)];
-    cell.p[0][3] = gridBuffer[GetGridIndex(id.x + 1, id.y, id.z)];
-    cell.p[1][0] = gridBuffer[GetGridIndex(id.x, id.y + 1, id.z)];
-    cell.p[1][1] = gridBuffer[GetGridIndex(id.x, id.y + 1, id.z + 1)];
-    cell.p[1][2] = gridBuffer[GetGridIndex(id.x + 1, id.y + 1, id.z + 1)];
-    cell.p[1][3] = gridBuffer[GetGridIndex(id.x + 1, id.y + 1, id.z)];
 
-    return cell;
-}
 
 void UpdateNeighbors(float3 id, float delta_s)
 {
@@ -298,19 +319,7 @@ void UpdateNeighbors(float3 id, float delta_s)
     gridBuffer[GetGridIndex(id.x + 1, id.y + 1, id.z)] -= delta_s;
 }
 
-float L(HydroCell cell, float3 pos)
-{ 
-    int3 voxel = int3(pos);
-    float3 frac = pos - voxel;
 
-    float4 ix = lerp(cell.p._m00_m01_m10_m11, cell.p._m03_m02_m13_m12, frac.x);
-    // z=0: x.03, y.12, | z=1: z.47, w.56
-
-    float2 ixz = lerp(ix.xz, ix.yw, frac.z);
-    // y=0: x.0312, | y=1: y.4756
-
-    return lerp(ixz.x, ixz.y, frac.y);
-}
 
 
 

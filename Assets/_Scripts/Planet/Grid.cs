@@ -13,9 +13,9 @@ public class Grid
         this.global_grid_res = global_grid_res;
     }
 
-    public Vector4[] GetGridArray()
+    public float[] GetGridArray()
     {
-        var grid = new Vector4[gridBuffer.count];
+        var grid = new float[gridBuffer.count];
         gridBuffer.GetData(grid);
 
         return grid;

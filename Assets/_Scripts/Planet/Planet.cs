@@ -8,6 +8,7 @@ public class Planet: MonoBehaviour
 {
     // Planet Parameters
     public float radius;
+    public float radialRange;
     public float atmosphere;
     public Vector3 coordinates;
     public float sea_level_radius;
@@ -44,6 +45,7 @@ public class Planet: MonoBehaviour
     public Vector3 increments;
     public float iso;
     public bool interpolate;
+    public bool enhance;
 
     // Grid Data
     public Grid grid;
@@ -52,10 +54,12 @@ public class Planet: MonoBehaviour
 
     public ComputeShader simplex;
     public ComputeShader mc;
+    public ComputeShader chunk_shader;
+    public PlanetParameters parameters;
 
     public void Awake()
     {
-        frequency = radius / size_frequency_ratio;
+        frequency = Mathf.Pow(radius,3) / size_frequency_ratio;
         atmosphere = radius / 2f;
         bounds = Vector3.one * (radius + atmosphere) * 2;
         start_coordinates = coordinates - bounds / 2;
@@ -63,9 +67,9 @@ public class Planet: MonoBehaviour
 
     private void Update()
     {
-        frequency = radius / size_frequency_ratio;
-        asymptote = curvature +2f;
-        mod_offset = curvature + 0.9f;
+        frequency = Mathf.Pow(radius,3) / Mathf.Pow(size_frequency_ratio,3);
+        //asymptote = curvature +2f;
+        //mod_offset = curvature + 0.9f;
     }
     public void ConfigurePlanet(int global_res, int global_grid_res, float iso, bool interpolate)
     {
@@ -76,6 +80,9 @@ public class Planet: MonoBehaviour
 
         increments = bounds / global_res;
         manager = new PlanetManager(this);
+        var colls = this.GetComponentsInParent<SphereCollider>();
+        colls[0].radius = this.radius + this.radialRange;
+        colls[1].radius = this.radius - this.radialRange;
     }
 
     public Mesh GetChunkMesh(Chunk chunk, Transform parent)

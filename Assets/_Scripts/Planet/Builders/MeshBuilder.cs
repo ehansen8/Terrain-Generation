@@ -8,6 +8,7 @@ using UnityEngine;
 public class MeshBuilder
 {
     public MeshShader meshShader;
+    public ChunkShader chunkShader;
     public Planet planet;
     public bool use32IndexFormat;
     public bool invert_normals;
@@ -29,6 +30,12 @@ public class MeshBuilder
                                     planet.global_grid_res,
                                     planet.increments,
                                     planet.start_coordinates);
+
+        chunkShader = new ChunkShader(planet, planet.chunk_shader);
+        chunkShader.Initialize(planet.global_res,
+                                    planet.global_grid_res,
+                                    planet.increments,
+                                    planet.start_coordinates);
     }
 
     public Mesh GetMesh(Chunk chunk, Transform parent)
@@ -39,7 +46,9 @@ public class MeshBuilder
         if (use32IndexFormat)
             mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
 
-        var (tris,verts) = meshShader.GetTriangles(chunk);
+        var chunkBuffer = chunkShader.GetChunk(chunk);
+
+        var (tris,verts) = meshShader.GetTriangles(chunk, chunkBuffer);
         ConvertTrisToMesh(tris, verts, ref mesh, parent);
 
         if (flat_shade)
