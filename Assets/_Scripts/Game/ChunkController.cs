@@ -221,7 +221,7 @@ public class ChunkController : MonoBehaviour
 
                 var mesh = planet.GetChunkMesh(chunk, chunk_go);
                 chunk_go.GetComponent<MeshFilter>().mesh = mesh;
-                chunk_go.GetComponent<MeshCollider>().sharedMesh = mesh;        
+                chunk_go.GetComponent<MeshCollider>().sharedMesh = mesh; 
                 activeChunks.Add((id.x, id.y, id.z), chunk_go);
             }
         }

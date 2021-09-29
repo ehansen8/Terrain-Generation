@@ -361,8 +361,6 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
-/Assets/Scenes
-/Assets/Surface
 /Library
 /ProjectSettings
 /Temp
@@ -390,4 +388,8 @@ FodyWeavers.xsd
 /Assembly-CSharp.csproj
 /.vsconfig
 
+Unity.*
+/Assets
+!/Assets/_Scripts
+!/Assets/_Tests
 *.prefab
