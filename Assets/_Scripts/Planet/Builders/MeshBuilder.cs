@@ -46,9 +46,9 @@ public class MeshBuilder
         if (use32IndexFormat)
             mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
 
-        var chunkBuffer = chunkShader.GetChunk(chunk);
+        var osChunkBuffer = chunkShader.GetChunk(chunk);
 
-        var (tris,verts) = meshShader.GetTriangles(chunk, chunkBuffer);
+        var (tris,verts) = meshShader.GetTriangles(chunk, osChunkBuffer);
         ConvertTrisToMesh(tris, verts, ref mesh, parent);
 
         if (flat_shade)

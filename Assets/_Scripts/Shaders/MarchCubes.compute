@@ -304,6 +304,7 @@ struct Cell
 
 float iso;
 int chunk_grid_res;
+int oversize_chunk_grid_res;
 int gridRes;
 float3 start;
 float3 increments;
@@ -312,8 +313,9 @@ float3 gridPosOffset;
 
 RWStructuredBuffer<int> vCount;
 RWStructuredBuffer<Vertex> ordered_vertex_buffer;
+StructuredBuffer<float> osChunkBuffer;  //oversized by 1 in all directions from chunkBuffer
 RWStructuredBuffer<float> chunkBuffer;
-StructuredBuffer<float> gridBuffer;        // Input:[1,2,3]
+StructuredBuffer<float> gridBuffer; 
 RWStructuredBuffer<float3> normalBuffer;    // Output:[1], Input:[2]
 RWStructuredBuffer<Edges> vertexBuffer;     // Output:[2], Input:[3]
 AppendStructuredBuffer<Triangle> triBuffer; // Output:[3]
@@ -354,19 +356,20 @@ Vertex VertexInterp(int3 p0_idx, int3 p1_idx, int3 n0_idx, int3 n1_idx)
     return v;
 }
 
+//This is reading from an oversize chunkbuffer
 float3 N(int3 pos)
 {
     float2 ix;
     float2 iy;
     float2 iz;
-    ix.x = chunkBuffer[GetGridIndex(pos + int3(1, 0, 0), chunk_grid_res)];
-    ix.y = chunkBuffer[GetGridIndex(pos + int3(-1, 0, 0), chunk_grid_res)];
+    ix.x = osChunkBuffer[GetGridIndex(pos + int3(1, 0, 0), oversize_chunk_grid_res)];
+    ix.y = osChunkBuffer[GetGridIndex(pos + int3(-1, 0, 0), oversize_chunk_grid_res)];
 
-    iy.x = chunkBuffer[GetGridIndex(pos + int3(0, 1, 0), chunk_grid_res)];
-    iy.y = chunkBuffer[GetGridIndex(pos + int3(0, -1, 0), chunk_grid_res)];
+    iy.x = osChunkBuffer[GetGridIndex(pos + int3(0, 1, 0), oversize_chunk_grid_res)];
+    iy.y = osChunkBuffer[GetGridIndex(pos + int3(0, -1, 0), oversize_chunk_grid_res)];
 
-    iz.x = chunkBuffer[GetGridIndex(pos + int3(0, 0, 1), chunk_grid_res)];
-    iz.y = chunkBuffer[GetGridIndex(pos + int3(0, 0, -1), chunk_grid_res)];
+    iz.x = osChunkBuffer[GetGridIndex(pos + int3(0, 0, 1), oversize_chunk_grid_res)];
+    iz.y = osChunkBuffer[GetGridIndex(pos + int3(0, 0, -1), oversize_chunk_grid_res)];
 
     return -1 * normalize(float3(ix.x-ix.y, iy.x-iy.y, iz.x-iz.y));
 }
@@ -448,9 +451,14 @@ void CalculateNormals(int3 id : SV_DispatchThreadID)
         return;
 
 
+    // This stays the same
     int GI = GetGridIndex(id, chunk_grid_res);
-
-    normalBuffer[GI] = N(id);
+    
+    //This normalBuffer is the correct size
+    //add (1,1,1) to map normal buffer ID -> oversize chunk ID
+    int3 osID = id+int3(1,1,1);
+    normalBuffer[GI] = N(osID);
+    chunkBuffer[GI] = osChunkBuffer[GetGridIndex(osID, oversize_chunk_grid_res)];
 }
 
 [numthreads(8, 8, 8)]

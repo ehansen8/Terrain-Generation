@@ -26,4 +26,6 @@ public class PlanetParameters : MonoBehaviour
     public float initial_amplitude;
     [Range(0,1)]
     public float clampRange;
+
+    public float modifier_strength;
 }

@@ -32,7 +32,8 @@ public class Planet: MonoBehaviour
     public float curvature;
     [Range(0, 3)]
     public float mod_offset;
-    
+    public float modifier_strength;
+
     //Display Parameters
     public int global_res;
     public int global_grid_res;
@@ -56,10 +57,11 @@ public class Planet: MonoBehaviour
     public ComputeShader mc;
     public ComputeShader chunk_shader;
     public PlanetParameters parameters;
+    public PlanetParameters carve_params;
 
     public void Awake()
     {
-        frequency = Mathf.Pow(radius,3) / size_frequency_ratio;
+        frequency = Mathf.Pow(radius,3) / Mathf.Pow(size_frequency_ratio,3);
         atmosphere = radius / 2f;
         bounds = Vector3.one * (radius + atmosphere) * 2;
         start_coordinates = coordinates - bounds / 2;

@@ -71,6 +71,17 @@ public class GridShader : ShaderData
         shader.SetFloat(Shader.PropertyToID("asymptote"), planet.asymptote);
         shader.SetFloat(Shader.PropertyToID("curvature"), planet.curvature);
         shader.SetFloat(Shader.PropertyToID("mod_offset"), planet.mod_offset);
+        shader.SetFloat(Shader.PropertyToID("modifier_strength"), planet.modifier_strength);
+
+        //Carve Parameters
+        var carve = planet.carve_params;
+        shader.SetFloat(Shader.PropertyToID("carve_freq"), carve.frequency);
+        shader.SetInt(Shader.PropertyToID("carve_octaves"), carve.octaves);
+        shader.SetFloat(Shader.PropertyToID("carve_lacunarity"), carve.lacunarity);
+        shader.SetFloat(Shader.PropertyToID("carve_persistance"), carve.persistance);
+        shader.SetFloats(Shader.PropertyToID("carve_offset"), new float[] { carve.offset.x, carve.offset.y, carve.offset.z });
+        shader.SetFloat(Shader.PropertyToID("carve_strength"), carve.modifier_strength);
+        shader.SetFloat(Shader.PropertyToID("carve_clamp_range"), carve.clampRange);
 
         InitializeBuffers();
     }
@@ -136,7 +147,7 @@ public class MeshShader : ShaderData
     }
 
     /// Gets the list of triangles that make up the mesh for the passed in chunk
-    public (TriStruct[],Vertex[]) GetTriangles(Chunk chunk, ComputeBuffer chunkBuffer)
+    public (TriStruct[],Vertex[]) GetTriangles(Chunk chunk, ComputeBuffer osChunkBuffer)
     {
         //Set up Instance Buffers
         var vert_len = (int)Mathf.Pow(chunk.final_grid_res, 3);
@@ -144,13 +155,14 @@ public class MeshShader : ShaderData
 
         var vertexBuffer = new ComputeBuffer(vert_len, EdgeStruct.GetSize());
         var normalBuffer = new ComputeBuffer(vert_len, sizeof(float) * 3);
+        var chunkBuffer = new ComputeBuffer(vert_len, sizeof(float) * 3);
         var triBuffer = new ComputeBuffer(tri_len, TriStruct.GetSize(), ComputeBufferType.Append);
         var ordered_vertex_buffer = new ComputeBuffer(vert_len, Vertex.GetSize());
         var vCount = new ComputeBuffer(1, sizeof(int));
 
 
         this.gridIncrements = chunk.increments;
-        InitializeInstanceVariables(chunk.pos_offset, chunk.final_grid_res, normalBuffer, vertexBuffer, triBuffer, ordered_vertex_buffer, vCount, chunkBuffer);
+        InitializeInstanceVariables(chunk.pos_offset, chunk.final_grid_res, normalBuffer, vertexBuffer, triBuffer, ordered_vertex_buffer, vCount, chunkBuffer, osChunkBuffer);
 
         //Always reset this to zero before Dispatch()
         triBuffer.SetCounterValue(0);
@@ -173,6 +185,7 @@ public class MeshShader : ShaderData
         ordered_vertex_buffer.Release();
         vCount.Release();
         chunkBuffer.Release();
+        osChunkBuffer.Release();
 
         return (triangles, vertices);
     }
@@ -184,12 +197,14 @@ public class MeshShader : ShaderData
                                              ComputeBuffer triBuffer, 
                                              ComputeBuffer ordered_vertex_buffer,
                                              ComputeBuffer vCount,
-                                             ComputeBuffer chunkBuffer)
+                                             ComputeBuffer chunkBuffer,
+                                             ComputeBuffer osChunkBuffer)
     {
 
         //Set instance variables
         shader.SetFloats(Shader.PropertyToID("gridPosOffset"), pos_offset);
         shader.SetInt(Shader.PropertyToID("chunk_grid_res"), chunk_grid_res);
+        shader.SetInt(Shader.PropertyToID("oversize_chunk_grid_res"), chunk_grid_res+2);
 
         //Override this one
         shader.SetFloats(Shader.PropertyToID("increments"), new float[] { gridIncrements.x, gridIncrements.y, gridIncrements.z });
@@ -198,6 +213,7 @@ public class MeshShader : ShaderData
         //Pass 2
         shader.SetBuffer(normal_kernel, "normalBuffer", normalBuffer);
         shader.SetBuffer(normal_kernel, "chunkBuffer", chunkBuffer);
+        shader.SetBuffer(normal_kernel, "osChunkBuffer", osChunkBuffer);
 
         //Pass 2
         shader.SetBuffer(vertex_kernel, "normalBuffer", normalBuffer);
@@ -418,17 +434,25 @@ public class ChunkShader : ShaderData
         shader.SetBuffer(convert_kernel, "gridBuffer", gridBuffer);
     }
 
+   /// <summary>
+   /// Creates and returns a chunk that is 1 vertex larger in all directions.
+   /// So final_grid_res +2
+   /// </summary>
+   /// <param name="chunk"></param>
+   /// <returns>oversize Chunk</returns>
     public ComputeBuffer GetChunk(Chunk chunk)
     {
-        var chunk_len = (int)Mathf.Pow(chunk.initial_grid_res, 3);
+        var chunk_len = (int)Mathf.Pow(chunk.initial_grid_res+2, 3);
         InitializeInstanceVariables(chunk);
         var chunkBuffer = new ComputeBuffer(chunk_len, sizeof(float));
 
-        // We now have chunk
+        // We now have oversized chunkBuffer -> still needs assignment
         ConvertToChunk(chunkBuffer, chunk.initial_grid_res);
+
+        // Now have chunkBuffer of size init_grid_res+2
         chunkBuffer = IncreaseResolution(chunkBuffer, chunk);
         if(chunk.addNoise)
-            chunkBuffer = AddNoise(chunkBuffer, chunk.final_grid_res);
+            chunkBuffer = AddNoise(chunkBuffer, chunk.final_grid_res+2);
 
         //DebugChunk(chunkBuffer, chunk);
 
@@ -455,24 +479,25 @@ public class ChunkShader : ShaderData
         shader.Dispatch(convert_kernel, groups, groups, groups);
     }
 
-    private ComputeBuffer IncreaseResolution(ComputeBuffer oldChunkbuffer, Chunk chunk)
+    private ComputeBuffer IncreaseResolution(ComputeBuffer oldChunkBuffer, Chunk chunk)
     {
+
         var initial_res = chunk.initial_res;
         // res_factor is how many times the resolution is doubled
         for(int i = 0; i < chunk.res_factor; i++)
         {
             var target_grid_res = (initial_res * 2)+1;
-            var newChunkBuffer = CreateNewBuffer(target_grid_res);
-            SetResolutionDispatchVariables(initial_res, target_grid_res, oldChunkbuffer, newChunkBuffer);
-
+            var newChunkBuffer = CreateNewBuffer(target_grid_res+2);
+            SetResolutionDispatchVariables(initial_res+2, target_grid_res+2, oldChunkBuffer, newChunkBuffer);
             var groups = (initial_res / 8) + 1;
             shader.Dispatch(resolution_kernel, groups, groups, groups);
-            oldChunkbuffer.Release();
-            oldChunkbuffer = newChunkBuffer;
+            
+            oldChunkBuffer.Release();
+            oldChunkBuffer = newChunkBuffer;
             initial_res *= 2;
         }
 
-        return oldChunkbuffer;
+        return oldChunkBuffer;
     }
 
     private ComputeBuffer CreateNewBuffer(int target_grid_res)

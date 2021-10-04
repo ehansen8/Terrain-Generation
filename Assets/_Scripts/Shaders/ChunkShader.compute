@@ -114,16 +114,22 @@ int GetGridIndex(int3 idx, int res)
     return idx.x + (idx.y * res) + (idx.z * res * res);
 }
 
+///
+/// Converts the grid to a chunk.
+/// Needs to sample +1 grid point on all edges.
+/// Overall resolution is +2 in each dimension
+///
 [numthreads(8, 8, 8)]
 void ConvertGridToChunk(int3 id : SV_DispatchThreadID)
 {
-    //Last index should equal initial_res
-    if ((id.x >= target_grid_res) || (id.y >= target_grid_res) || (id.z >= target_grid_res))
+    //Last index should equal initial_res +2
+    if ((id.x >= target_grid_res+2) || (id.y >= target_grid_res+2) || (id.z >= target_grid_res+2))
         return;
     
-    int3 grid_id = id + grid_offset;
+    //Maps chunk space to grid space
+    int3 grid_id = id + grid_offset - int3(1,1,1);
 
-    newChunkBuffer[GetGridIndex(id, target_grid_res)] = gridBuffer[GetGridIndex(grid_id, gridRes)];
+    newChunkBuffer[GetGridIndex(id, target_grid_res+2)] = gridBuffer[GetGridIndex(grid_id, gridRes)];
 }
 
 struct Cell
@@ -164,36 +170,45 @@ void SetChunkBuffer(int3 chunk_id, float3 dir, Cell cell)
     newChunkBuffer[GetGridIndex(chunk_id + dir, target_grid_res)] = phi;
 }
 
+//Takes in an oversize buffer multiplies, then discards the 0 and initial_res values
 [numthreads(8,8,8)]
 void IncreaseResolution (int3 id : SV_DispatchThreadID)
 {
-    int3 chunk_id = id * 2;
+    int3 chunk_id = (id * 2) - int3(1,1,1);
 
-    //Last index should equal initial_res
-    if((id.x > initial_res) || (id.y > initial_res) || (id.z > initial_res))
+    if((id.x >= initial_res) || (id.y >= initial_res) || (id.z >= initial_res))
         return;
 
-    bool x_lim = (id.x == initial_res);
-    bool y_lim = (id.y == initial_res);
-    bool z_lim = (id.z == initial_res);
+    int3 bools;
+    bools.x = id.x > 0;
+    bools.y = id.y > 0;
+    bools.z = id.z > 0;
 
     Cell cell = GetCell(id);
 
-    newChunkBuffer[GetGridIndex(chunk_id, target_grid_res)] = cell.p[0][0];
 
-    if (!x_lim)
+    if(all(int3(0, 0, 0)|| bools))
+            newChunkBuffer[GetGridIndex(chunk_id, target_grid_res)] = cell.p[0][0];
+
+    if (all(int3(1, 0, 0) || bools))
         SetChunkBuffer(chunk_id, int3(1, 0, 0), cell);
-    if (!y_lim)
+
+    if (all(int3(0, 1, 0) || bools))
         SetChunkBuffer(chunk_id, int3(0, 1, 0), cell);
-    if (!z_lim)
+
+    if (all(int3(0, 0, 1) || bools))
         SetChunkBuffer(chunk_id, int3(0, 0, 1), cell);
-    if (!x_lim && !y_lim)
+
+    if (all(int3(1, 1, 0) || bools))
         SetChunkBuffer(chunk_id, int3(1, 1, 0), cell);
-    if (!x_lim && !z_lim)
+
+    if (all(int3(1, 0, 1) || bools))
         SetChunkBuffer(chunk_id, int3(1, 0, 1), cell);
-    if (!y_lim && !z_lim)
+
+    if (all(int3(0, 1, 1) || bools))
         SetChunkBuffer(chunk_id, int3(0, 1, 1), cell);
-    if (!x_lim && !y_lim && !z_lim)
+
+    if (all(int3(1, 1, 1) || bools))
         SetChunkBuffer(chunk_id, int3(1, 1, 1), cell);
 }
 
