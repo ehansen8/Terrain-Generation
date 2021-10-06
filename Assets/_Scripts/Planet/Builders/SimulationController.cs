@@ -24,9 +24,23 @@ public class SimulationController
     public void RunSimulation(int steps)
     {
         erosionSim.NewParticleBatch();
-        //var data = new Water[sim_size];
-        //erosionSim.waterBuffer.GetData(data);
+    }
 
-        //return data;
+    public void SingleStepSim()
+    {
+        erosionSim.DispatchShader();
+    }
+
+    public Water[] GetParticles()
+    {
+        var data = new Water[planet.erosion_params.num_particles];
+        erosionSim.waterBuffer.GetData(data);
+
+        return data;
+    }
+
+    public void SimulateBiomes()
+    {
+        
     }
 }

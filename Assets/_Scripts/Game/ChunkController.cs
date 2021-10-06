@@ -8,8 +8,10 @@ public class ChunkController : MonoBehaviour
     //make sure dimensions are uniform for now so global chunk size is consistant
     public Vector3 min_bounds;
     public Vector3 max_bounds;
+    public Vector3 totalSize;
     public bool takeStep;
     public int simSteps;
+    public bool calculate_height_delta = true;
     public bool buildChunks;
     public bool clearGrid;
     public bool redrawMesh;
@@ -54,7 +56,7 @@ public class ChunkController : MonoBehaviour
     public List<(Vector3 center, Vector3 size)> boxCoords;
     //public List<EdgeStruct[]> gridList;
     public List<Vector4[]> gridList;
-    public List<List<Water>> particlesList;
+    public Water[] waterParticles;
     public Gradient particleGradient;
 
 
@@ -63,11 +65,15 @@ public class ChunkController : MonoBehaviour
     private float lastRedrawTime = 0;
     public float timeBetweenRedraw;
 
+    public float min_vertex_radius = Mathf.Infinity;
+    public float max_vertex_radius = 0;
+    public float max_height_delta;
+
 
     void Start()
     {
         planet = planet_go.GetComponent<Planet>();
-        particlesList = new List<List<Water>>();
+        waterParticles = new Water[0];
 
         RefreshGlobalParameters();
 
@@ -83,16 +89,19 @@ public class ChunkController : MonoBehaviour
     {
         min_bounds = -1 * planet.bounds / 2;
         max_bounds = planet.bounds / 2;
-
-        chunkDims = RoundUpVector((max_bounds - min_bounds) / chunkSize);
+        totalSize = (max_bounds - min_bounds);
+        chunkDims = RoundUpVector( totalSize / chunkSize);
+        
         globalRes = Mathf.Max(chunkDims.x, chunkDims.y, chunkDims.z) * chunkRes;
         globalGridRes = globalRes + 1;
+
     }
 
     private void Update()
     {
         if (clearGrid || (alwaysRedraw && CanRedraw()))
         {
+            calculate_height_delta = true;
             clearGrid = false;
             RefreshGlobalParameters();
             planet.ClearGrid();
@@ -106,6 +115,7 @@ public class ChunkController : MonoBehaviour
 
         if(redrawMesh || (alwaysRedraw && CanRedraw()))
         {
+            calculate_height_delta = true;
             redrawMesh = false;
             foreach (var p in activeChunks.Values)
             {
@@ -121,24 +131,33 @@ public class ChunkController : MonoBehaviour
             for (int j = 0; j < simSteps; j++)
             {
                 takeStep = false;
-                //Water[] particles = 
-                planet.manager.sim.RunSimulation(1);
 
-                //for (int i = 0; i < particles.Length; i++)
-                //{
-                //    if (this.particlesList.Count <= i)
-                //    {
-                //        this.particlesList.Insert(i, new List<Water>());
-                //        this.particlesList[i].Add(particles[i]);
-                //    }
-                //    else
-                //    {
-                //        this.particlesList[i].Add(particles[i]);
-                //    }
-                //} 
+                planet.manager.sim.RunSimulation(1);
+                waterParticles = planet.manager.sim.GetParticles();
             }
             redrawMesh = true;
                 
+        }
+
+        if (calculate_height_delta)
+        {
+            calculate_height_delta = false;
+            max_vertex_radius = 0;
+            min_vertex_radius = Mathf.Infinity;
+            foreach (var chunk in activeChunks.Values)
+            {
+                var mesh = chunk.GetComponent<MeshFilter>().mesh;
+                foreach (var v in mesh.vertices)
+                {
+                    var mag = v.magnitude;
+                    if(mag > max_vertex_radius)
+                        max_vertex_radius = mag;
+                    
+                    if(mag < min_vertex_radius)
+                        min_vertex_radius = mag;
+                }
+            }
+            max_height_delta = max_vertex_radius - min_vertex_radius;
         }
 
     }
@@ -325,63 +344,29 @@ public class ChunkController : MonoBehaviour
                         continue;
                 }
                 Gizmos.color = point > isoLevel ? Color.red : Color.blue;
-                Gizmos.DrawSphere(c, 0.5f);
+                Gizmos.DrawSphere(c, 50f);
             }
         }
 
-        if (drawParticles && particlesList != null)
+        if (drawParticles && waterParticles != null)
         {
-            foreach (var particles in particlesList)
+            foreach (var p in waterParticles)
             {
-                var c = particles.Count;
-                for (int i = 0; i < c; i++)
-                {
-                    var p = particles[i];
-                    var pos = GridToWorld(p.pos);
-
-                
-
-                    if (i == c-1) // last particle
-                    {
-                        Gizmos.color = Color.blue;
-                        Gizmos.DrawSphere(pos, 0.1f);
-                        //UnityEditor.Handles.Label(pos - Vector3.one * 3, $"water: {p.water} \n" +
-                        //                                                $"sediment: {p.sediment} \n" +
-                        //                                                $"phi: {p.phi} \n" +
-                        //                                                $"vel: {p.vel.magnitude} \n" +
-                        //                                                $"air_f: {p.tangent.magnitude} \n" +
-                        //                                                $"surf_f: {p.normal.magnitude} \n" +
-                        //                                                $"c: {p.c} \n" +
-                        //                                                $"delta_s: {p.delta_s}");
-
-                        //Gizmos.color = Color.white;
-                        //Gizmos.DrawRay(pos, p.vel);
-
-                        //Gizmos.color = Color.red;
-                        //Gizmos.DrawRay(pos, p.tangent); // friction
-
-                        //Gizmos.color = Color.green;
-                        //Gizmos.DrawRay(pos, p.normal); //air
-                        //DrawSurroundingGrid(p.pos);
-                            
-                    }
-                    else
-                    {
-                        var p1 = particles[i + 1];
-                        var pos1 = GridToWorld(p1.pos);
-                        Gizmos.color = Color.white;
-                        Gizmos.DrawLine(pos, pos1);
-                    }
+                var pos = GridToWorld(p.pos);
+                Gizmos.color = Color.blue;
+                Gizmos.DrawSphere(pos, 5f);
+                // UnityEditor.Handles.Label(pos - Vector3.one * 3,$"water: {p.water} \n" +
+                // $"sediment: {p.sediment} \n" +
+                // $"phi: {p.phi} \n" +
+                // $"vel: {p.vel} \n"
+                // );
                 }
             }
-
-
         }
-    }
 
     Vector3 GridToWorld(Vector3 gridPos)
     {
-        return (gridPos * chunkSize/globalRes) + min_bounds; 
+        return (gridPos * totalSize.x/globalRes) + min_bounds; 
     }
 
     public void DrawSurroundingGrid(Vector3 gridPos)

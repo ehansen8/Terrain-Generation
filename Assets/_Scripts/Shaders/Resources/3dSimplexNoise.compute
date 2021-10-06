@@ -1,5 +1,6 @@
 #pragma kernel SimplexGrid
-#pragma kernel SimulateErosion
+#pragma kernel SimulateHydraulicErosion
+#pragma kernel SimulateThermalErosion
   
 //
 // Description : Array and textureless GLSL 2D/3D/4D simplex 
@@ -116,10 +117,13 @@ float lacunarity;
 float persistance;
 float3 offset;
 float planet_radius;
-float asymptote;
-float curvature;
-float mod_offset;
-float modifier_strength;
+float maskStartRadius;
+float maskEndRadius;
+float maskStrength;
+// float asymptote;
+// float curvature;
+// float mod_offset;
+// float modifier_strength;
 
 float carve_freq;
 int carve_octaves;
@@ -148,35 +152,42 @@ float IterateNoise(float3 pos)
     float tempMult = 1;
     float3 off = float3(offset.x,offset.y,offset.z);
 
-    for (int i = 0; i < octaves; i++)
+    //Single pass of ridge noise, followed by regular noise
+    value += (-abs(snoise(((off+pos)*tempFreq)))+1) * tempMult;
+    tempFreq *= lacunarity;
+    tempMult *= persistance;
+
+    [loop] for (int i = 0; i < octaves-1; i++)
     {   
 
         // First pass freq is normal and mult is 1
         // 
-
-        
-        value += (-abs(snoise(((off+pos)*tempFreq)))+1) * tempMult;
+        value += (snoise(((off+pos)*tempFreq))+1) * tempMult;
         tempFreq *= lacunarity;
         tempMult *= persistance;
     }
 
     //Radius smoothing function 
     //(Logistic Function: asy is horizontal asymptote, k is curvature, midpoint is where value = asy/2 );
-    float asy = asymptote;
-    float k = curvature;
-    float midpoint = planet_radius;
-    float modifier = (asy / (1+exp(-k*(length(pos)-midpoint))))-mod_offset;
+    // float asy = asymptote;
+    // float k = curvature;
+    // float midpoint = planet_radius;
+    // float modifier = (asy / (1+exp(-k*(length(pos)-midpoint))))-mod_offset;
 
-    modifier *= modifier_strength;
+    // modifier *= modifier_strength;
 
     // plate region is 
     /*if (length(pos) > planet_radius)
         return -1;
     else if (length(pos) < planet_radius * 0.85)
         return 1;*/
+    
+    // At maskStartRadius, begin subtracting material, with the max amount being subtracted at maskEndRadius and beyond. Scaled by maskStrength
+    value -= smoothstep(maskStartRadius, maskEndRadius, length(pos)) * maskStrength;
 
-    value = clamp(value, -2, 2);
-    return clamp(value-modifier,-1,1);
+    // TODO: Revisit this, clamping range will affect erosion
+    //value = clamp(value, -2, 2);
+    return value;
 }
 
 // Create Fractal Noise
@@ -227,7 +238,7 @@ void SimplexGrid (int3 id : SV_DispatchThreadID)
     int GI = GetGridIndex(id.x,id.y,id.z);
     float3 pos = ScalePosition(id);
 
-    gridBuffer[GI] = IterateNoise(pos)-CarveNoise(pos);
+    gridBuffer[GI] = IterateNoise(pos);
 }
 
 
@@ -323,7 +334,7 @@ float alpha_2;
 float sigma;        //contribution of sediment to weight
 float K_fric;
 float K_air;
-float K_kill_speed;
+float P_step_size;
 
 
 struct Water
@@ -334,6 +345,8 @@ struct Water
     float sediment; // mass of sediment that particle contains
 };
 
+// Takes in grid position
+// Returns grid gravity direction
 float3 G(float3 pos)
 {
     return normalize((float3(gridRes-1,gridRes-1,gridRes-1) / 2) - pos);   //(gridRes-1)/2 = 0,0,0 in grid coordinates
@@ -363,20 +376,16 @@ RWStructuredBuffer<Water> waterBuffer;
 
 
 [numthreads(1024, 1, 1)]
-void SimulateErosion(int3 Tid : SV_DispatchThreadID)
+void SimulateHydraulicErosion(int3 Tid : SV_DispatchThreadID)
 {
     Water p = waterBuffer[Tid.x];
-    float step_size = 1;
+    float step_size = P_step_size;
     float step_dist = step_size * increments.x;
 
     while (p.water > P_min_water)
     {
         float delta_t = step_dist / length(p.vel);
-        float mass = (1 + sigma * p.sediment);/*
-
-        if (length(p.vel) < K_kill_speed)
-            return;*/
-
+        float mass = (1 + sigma * p.sediment);
             // ---------------------------
             // Main loop starts here
 
@@ -387,10 +396,12 @@ void SimulateErosion(int3 Tid : SV_DispatchThreadID)
         float3 v_tangent = p.vel - v_normal;
 
         int collided = 0;
+        //p.phi = L(cell,p.pos);
+
         // If collision -> update position with normal, but keep vel the same
-        [unroll(2)] while (L(cell, p.pos) >= 0)
+        while (L(cell, p.pos) >= 0)
         {
-            p.pos += n * 0.5;    //can adjust the 0.f weight later
+            p.pos += n * (step_size/2);    //can adjust the 0.f weight later
             cell = GetCell(int3(p.pos));
             collided = 1;
         }
@@ -398,7 +409,7 @@ void SimulateErosion(int3 Tid : SV_DispatchThreadID)
 
         // If it collides -> loses all normal momentum
         p.vel = lerp(p.vel, v_tangent, collided);
-
+        
         float velocity = length(p.vel);
         float3 v_hat = p.vel / velocity;
         // Only Update if collison
@@ -445,14 +456,97 @@ void SimulateErosion(int3 Tid : SV_DispatchThreadID)
         if (collided == 0)
             delta_s = 0;
 
-        UpdateNeighbors(p.pos, delta_s);
+        UpdateNeighbors(p.pos, delta_s/8);
 
         p.water *= (1 - P_evaporation); // constant evaporation rate
         p.sediment += delta_s;
-        p.pos = pos_new;        //update after UpdateNeighbors at old position
+        p.pos = pos_new;
     }
     waterBuffer[Tid.x] = p;
 }
+
+int GetGridIndex(int3 pos, int res)
+{
+    return pos.x + (pos.y * res) + (pos.z * res * res);
+}
+
+
+float3 N_Grid(int3 pos)
+{
+    float2 ix;
+    float2 iy;
+    float2 iz;
+    ix.x = gridBuffer[GetGridIndex(pos + int3(1, 0, 0), gridRes)];
+    ix.y = gridBuffer[GetGridIndex(pos + int3(-1, 0, 0), gridRes)];
+
+    iy.x = gridBuffer[GetGridIndex(pos + int3(0, 1, 0), gridRes)];
+    iy.y = gridBuffer[GetGridIndex(pos + int3(0, -1, 0), gridRes)];
+
+    iz.x = gridBuffer[GetGridIndex(pos + int3(0, 0, 1), gridRes)];
+    iz.y = gridBuffer[GetGridIndex(pos + int3(0, 0, -1), gridRes)];
+
+    return -1 * normalize(float3(ix.x-ix.y, iy.x-iy.y, iz.x-iz.y));
+}
+
+// inputs should be unit vectors
+// output is in degrees
+float CalcAngle(float3 v1, float3 v2)
+{
+    return degrees(acos(dot(v1,v2)));
+}
+
+//Used above ^^^ RWStructuredBuffer<Water> waterBuffer;
+float talus_angle;
+float min_sediment_loss;
+
+[numthreads(1024, 1, 1)]
+void SimulateThermalErosion(int3 Tid : SV_DispatchThreadID)
+{
+    // Tid is equivalent to grid position
+    float3 pos = Tid;
+
+    // Should test w/ and without running on only positive grid points vs all grid points
+    float phi = gridBuffer[GetGridIndex(pos, gridRes)];
+    if(phi <= 0)
+        return;
+
+    //Calculate normal of point
+    float3 n = N_Grid(pos)
+
+    // normal == 0, we should quit
+    if(n == float3(0,0,0))
+        return;
+
+    //Determine direction
+    float3 g = G(pos);
+
+    // Determine current angle of grid point
+    float3 a = CalcAngle(n,g);
+
+    // Can modify later, but may run into problems for overhangs. So quit if Terrain angle is too large
+    // Also quit if angle is less than talus angle + 90
+    // If terrain is @ angle Theta -> normal = Theta + 90
+    if((a <= 90) || (a >= 90 + talus_angle))
+        return;
+
+    // If we made it this far -> angle is in critical range and grid point needs to lose mass
+
+    //Scale so max component == 1
+    float scale = max(g);
+
+    // Calculate offset to reach closest grid point in direction of gravity
+    // May need a check if scale == 0;
+    // 1: map abs() of components >= 0.5 -> 1, else 0
+    // 2: multiply by the sign of original gravity vector to make up for abs()
+    float3 dir = sign(g) * step(float3(0.5,0.5,0.5), abs(g / scale));
+
+    // transfer amount is min of half of current grid point sediment, and pre-determined amount
+    float delta_s = min(phi/2, min_sediment);
+
+
+
+
+}   
 
 
 

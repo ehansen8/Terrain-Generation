@@ -68,10 +68,14 @@ public class GridShader : ShaderData
         shader.SetFloat(Shader.PropertyToID("persistance"), planet.persistance);
         shader.SetFloats(Shader.PropertyToID("offset"), new float[] { planet.offset.x, planet.offset.y, planet.offset.z });
         shader.SetFloat(Shader.PropertyToID("planet_radius"), planet.radius);
-        shader.SetFloat(Shader.PropertyToID("asymptote"), planet.asymptote);
-        shader.SetFloat(Shader.PropertyToID("curvature"), planet.curvature);
-        shader.SetFloat(Shader.PropertyToID("mod_offset"), planet.mod_offset);
-        shader.SetFloat(Shader.PropertyToID("modifier_strength"), planet.modifier_strength);
+        // shader.SetFloat(Shader.PropertyToID("asymptote"), planet.asymptote);
+        // shader.SetFloat(Shader.PropertyToID("curvature"), planet.curvature);
+        // shader.SetFloat(Shader.PropertyToID("mod_offset"), planet.mod_offset);
+        // shader.SetFloat(Shader.PropertyToID("modifier_strength"), planet.modifier_strength);
+        shader.SetFloat(Shader.PropertyToID("maskStartRadius"), planet.maskStartRadius);
+        shader.SetFloat(Shader.PropertyToID("maskEndRadius"), planet.maskEndRadius);
+        shader.SetFloat(Shader.PropertyToID("maskStrength"), planet.maskStrength);
+        shader.SetFloat(Shader.PropertyToID("fillRadius"), planet.fillRadius);
 
         //Carve Parameters
         var carve = planet.carve_params;
@@ -320,6 +324,7 @@ public class MeshShader : ShaderData
 public class ErosionSimulation : ShaderData
 {
     public int kernel;
+    public int thermal_kernel;
     public Planet planet;
     public ComputeBuffer waterBuffer;
     public int num_particles;
@@ -327,7 +332,7 @@ public class ErosionSimulation : ShaderData
     public ErosionSimulation(Planet planet, int sim_size, ComputeShader shader)
     {
         this.planet = planet;
-        this.num_particles = sim_size;
+        this.num_particles = planet.erosion_params.num_particles;
         this.shader = shader;
     }
 
@@ -335,24 +340,25 @@ public class ErosionSimulation : ShaderData
     {
         InitializeBase(global_res, global_grid_res, gridIncrements, startCoordinates);
         // Get Kernel
-        kernel = shader.FindKernel("SimulateErosion");
+        kernel = shader.FindKernel("SimulateHydraulicErosion");
 
         // HACK Pass these in somehow
         // Erosion Specific Parameters
-        shader.SetFloat(Shader.PropertyToID("P_evaporation"), 0.01f);
-        shader.SetFloat(Shader.PropertyToID("P_gravity"), 9.8f);
-        shader.SetFloat(Shader.PropertyToID("P_capacity"), .01f);
-        shader.SetFloat(Shader.PropertyToID("P_erosion"), .01f);
-        shader.SetFloat(Shader.PropertyToID("P_deposition"), .3f);
-        shader.SetFloat(Shader.PropertyToID("K_normal"), 0.05f);
-        shader.SetFloat(Shader.PropertyToID("K_tangent"), 0.2f);
-        shader.SetFloat(Shader.PropertyToID("K_min_deposition"), 0.001f);
-        shader.SetFloat(Shader.PropertyToID("alpha_1"), 0.5f);
-        shader.SetFloat(Shader.PropertyToID("alpha_2"), 0.9f);
-        shader.SetFloat(Shader.PropertyToID("sigma"), 0.5f);
-        shader.SetFloat(Shader.PropertyToID("K_fric"), 0.5f);
-        shader.SetFloat(Shader.PropertyToID("K_air"), 0.121f);      //approx. value for terminal velocity of 9 m/s
-        shader.SetFloat(Shader.PropertyToID("K_kill_speed"), 0.1f);
+        shader.SetFloat(Shader.PropertyToID("P_min_water"), planet.erosion_params.P_min_water);
+        shader.SetFloat(Shader.PropertyToID("P_evaporation"), planet.erosion_params.P_evaporation);
+        shader.SetFloat(Shader.PropertyToID("P_gravity"), planet.erosion_params.P_gravity);
+        shader.SetFloat(Shader.PropertyToID("P_capacity"), planet.erosion_params.P_capacity);
+        shader.SetFloat(Shader.PropertyToID("P_erosion"), planet.erosion_params.P_erosion);
+        shader.SetFloat(Shader.PropertyToID("P_deposition"), planet.erosion_params.P_deposition);
+        shader.SetFloat(Shader.PropertyToID("K_normal"), planet.erosion_params.K_normal);
+        shader.SetFloat(Shader.PropertyToID("K_tangent"), planet.erosion_params.K_tangent);
+        shader.SetFloat(Shader.PropertyToID("K_min_deposition"), planet.erosion_params.K_min_deposition);
+        shader.SetFloat(Shader.PropertyToID("alpha_1"), planet.erosion_params.alpha_1);
+        shader.SetFloat(Shader.PropertyToID("alpha_2"), planet.erosion_params.alpha_2);
+        shader.SetFloat(Shader.PropertyToID("sigma"), planet.erosion_params.sigma);
+        shader.SetFloat(Shader.PropertyToID("K_fric"), planet.erosion_params.K_fric);
+        shader.SetFloat(Shader.PropertyToID("K_air"), planet.erosion_params.K_air);      //approx. value for terminal velocity of 9 m/s
+        shader.SetFloat(Shader.PropertyToID("P_step_size"), planet.erosion_params.P_step_size);      //approx. value for terminal velocity of 9 m/s
 
         InitializeBuffers();
     }
@@ -366,10 +372,8 @@ public class ErosionSimulation : ShaderData
         shader.SetBuffer(kernel, "waterBuffer", waterBuffer);
     }
 
-    public void DispatchShader(float min_water)
+    public void DispatchShader()
     {
-
-        shader.SetFloat(Shader.PropertyToID("P_min_water"), min_water);
         shader.Dispatch(kernel, num_particles / 1024, 1, 1);   // divide steps by / Numthreads
     }
 
@@ -380,19 +384,59 @@ public class ErosionSimulation : ShaderData
         for (int i = 0; i < num_particles; i++)
         {
             Water p = new Water();
-            p.pos = Random.onUnitSphere * (planet.radius + planet.atmosphere / 4);
+            p.pos = Random.onUnitSphere * planet.erosion_params.P_starting_radius;
             p.pos = (p.pos - startCoordinates) / gridIncrements.x;   //map world space to grid space
             p.vel = (Vector3.one * global_res / 2) - p.pos;
             p.vel.Normalize();// direction of gravity
-            p.water = 1;
-            p.sediment = 0f;
+            p.water = planet.erosion_params.P_init_water;
+            p.sediment = planet.erosion_params.P_init_sediment;
             particles[i] = p;
 
         }
         waterBuffer.SetData(particles);
 
-        DispatchShader(0.05f);
+        DispatchShader();
     }
+
+    public Water[] TestInitParticles()
+    {
+        //Initialize water particles
+        var particles = new Water[num_particles];
+        for (int i = 0; i < num_particles; i++)
+        {
+            Water p = new Water();
+            p.pos = Random.onUnitSphere * planet.erosion_params.P_starting_radius;
+            p.pos = (p.pos - startCoordinates) / gridIncrements.x;   //map world space to grid space
+            p.vel = (Vector3.one * global_res / 2) - p.pos;
+            p.vel.Normalize();// direction of gravity
+            p.water = planet.erosion_params.P_init_water;
+            p.sediment =planet.erosion_params.P_init_sediment;
+            particles[i] = p;
+
+        }
+
+        return particles;
+    }
+
+    public void InitializeThermal(ThermalErosionParameters e_params)
+    {
+        thermal_kernel = shader.FindKernel("SimulateThermalErosion");
+        shader.SetFloat(Shader.PropertyToID("talus_angle"), e_params.talus_angle);
+        shader.SetFloat(Shader.PropertyToID("min_sediment"), e_params.min_sediment);
+    }
+
+    public int GetThermalGroups(int grid_res)
+    {
+        return (grid_res + 7) / 8;
+    }
+
+    public void DispatchThermalShader()
+    {
+        var g = GetThermalGroups(global_grid_res);
+        shader.Dispatch(thermal_kernel, g, g, g);
+    }
+
+    
 
 }
 

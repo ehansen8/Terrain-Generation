@@ -37,6 +37,7 @@
   </PropertyGroup>
   <ItemGroup>
      <Compile Include="Assets\_Scripts\Planet\PlanetParameters.cs" />
+     <Compile Include="Assets\_Scripts\Shaders\Biomes\BiomeSim.cs" />
      <Compile Include="Assets\_Scripts\Planet\Builders\MeshBuilder.cs" />
      <Compile Include="Assets\_Scripts\Old Functions\MeshGen.cs" />
      <Compile Include="Assets\_Scripts\Structs.cs" />
@@ -46,6 +47,7 @@
      <Compile Include="Assets\_Scripts\Planet\Builders\GridBuilder.cs" />
      <Compile Include="Assets\_Scripts\MarchingCubes.cs" />
      <Compile Include="Assets\_Scripts\Old Functions\Triangulation.cs" />
+     <Compile Include="Assets\_Scripts\Planet\ErosionParameters.cs" />
      <Compile Include="Assets\_Scripts\Planet\Builders\SimulationController.cs" />
      <Compile Include="Assets\_Scripts\Planet\PlanetManager.cs" />
      <Compile Include="Assets\_Scripts\Shaders\Shaders.cs" />
@@ -54,11 +56,12 @@
      <Compile Include="Assets\_Scripts\Planet\Planet.cs" />
      <Compile Include="Assets\_Scripts\Noise Functions\NoiseSample.cs" />
      <Compile Include="Assets\_Scripts\Old Functions\GridCell.cs" />
-     <None Include="Assets\_Scripts\Shaders\MarchCubes.compute" />
-     <None Include="Assets\_Scripts\Shaders\3dSimplexNoise.compute" />
-     <None Include="Assets\_Scripts\Shaders\Mandelbulb.compute" />
+     <None Include="Assets\_Scripts\Shaders\Resources\MarchCubes.compute" />
+     <None Include="Assets\_Scripts\Shaders\Resources\3dSimplexNoise.compute" />
+     <None Include="Assets\_Scripts\Shaders\Resources\Mandelbulb.compute" />
+     <None Include="Assets\_Scripts\Shaders\Biomes\BiomeSimShader.compute" />
      <None Include="Assets\_Scripts\GameAssembly.asmdef" />
-     <None Include="Assets\_Scripts\Shaders\ChunkShader.compute" />
+     <None Include="Assets\_Scripts\Shaders\Resources\ChunkShader.compute" />
     <Reference Include="UnityEngine">
         <HintPath>D:\Program Files\Unity\Hub\2021.1.22f1\Editor\Data\Managed\UnityEngine\UnityEngine.dll</HintPath>
     </Reference>

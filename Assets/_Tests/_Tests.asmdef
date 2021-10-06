@@ -2,9 +2,8 @@
     "name": "_Tests",
     "rootNamespace": "",
     "references": [
-        "UnityEngine.TestRunner",
-        "UnityEditor.TestRunner",
-        "GameAssembly"
+        "GameAssembly",
+        "UnityEngine.UI.Tests"
     ],
     "includePlatforms": [
         "Editor"
@@ -12,9 +11,7 @@
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": true,
-    "precompiledReferences": [
-        "nunit.framework.dll"
-    ],
+    "precompiledReferences": [],
     "autoReferenced": false,
     "defineConstraints": [
         "UNITY_INCLUDE_TESTS"

@@ -13,6 +13,8 @@ public class Planet: MonoBehaviour
     public Vector3 coordinates;
     public float sea_level_radius;
     public float snowcap_radius;
+    public ErosionParameters erosion_params;
+    public ThermalErosionParameters thermal_params;
 
     // Noise parameters
     [HideInInspector]
@@ -26,6 +28,10 @@ public class Planet: MonoBehaviour
     [Range(0, 1)]
     public float persistance;
     public Vector3 offset;
+    public float maskStartRadius;
+    public float maskEndRadius;
+    public float maskStrength;
+    public float fillRadius;
     [Range(0.1f, 5)]
     public float asymptote;
     [Range(0.01f, 0.5f)]
@@ -58,6 +64,9 @@ public class Planet: MonoBehaviour
     public ComputeShader chunk_shader;
     public PlanetParameters parameters;
     public PlanetParameters carve_params;
+    public 
+
+    
 
     public void Awake()
     {
