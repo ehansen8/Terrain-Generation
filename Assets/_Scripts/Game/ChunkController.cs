@@ -11,6 +11,7 @@ public class ChunkController : MonoBehaviour
     public Vector3 totalSize;
     public bool takeStep;
     public int simSteps;
+    public bool takeThermalStep = false;
     public bool calculate_height_delta = true;
     public bool buildChunks;
     public bool clearGrid;
@@ -28,7 +29,6 @@ public class ChunkController : MonoBehaviour
     public int globalGridRes;
 
     // MC parameters
-    public float isoLevel = 0;
     public bool drawGrid = true;
     public bool onlyDrawInside = true;
     public bool drawVertices = true;
@@ -41,24 +41,17 @@ public class ChunkController : MonoBehaviour
     public ComputeShader marchShader;
 
     public GameObject planet_go;
+    public PlanetBehavior planetBehavior;
     Planet planet;
     public Transform player;
 
-
-    MarchingCubes MC;
     Dictionary<(int,int,int),Transform> activeChunks;
     List<Vector3Int> radialChunks;
     List<Vector3Int> allChunks;
     public Transform chunk_go;
     public Vector3Int chunkDims;
-
-    // Debugging
-    public List<(Vector3 center, Vector3 size)> boxCoords;
-    //public List<EdgeStruct[]> gridList;
     public List<Vector4[]> gridList;
     public Water[] waterParticles;
-    public Gradient particleGradient;
-
 
     private Vector4[] grid;
 
@@ -72,14 +65,17 @@ public class ChunkController : MonoBehaviour
 
     void Start()
     {
-        planet = planet_go.GetComponent<Planet>();
+        planetBehavior = planet_go.GetComponent<PlanetBehavior>();
+        RefreshGlobalParameters();
+        ConfigurePlanet();
+        planet = planetBehavior.CreatePlanet();
+
         waterParticles = new Water[0];
 
-        RefreshGlobalParameters();
+        
 
         activeChunks = new Dictionary<(int, int, int), Transform>();
-        
-        ConfigurePlanet();
+
         //radialChunks = GetRadialChunks();
 
         allChunks = GetAllChunks();
@@ -87,8 +83,8 @@ public class ChunkController : MonoBehaviour
 
     void RefreshGlobalParameters()
     {
-        min_bounds = -1 * planet.bounds / 2;
-        max_bounds = planet.bounds / 2;
+        min_bounds = -1 * planetBehavior.planet_params.bounds / 2;
+        max_bounds = planetBehavior.planet_params.bounds / 2;
         totalSize = (max_bounds - min_bounds);
         chunkDims = RoundUpVector( totalSize / chunkSize);
         
@@ -132,11 +128,18 @@ public class ChunkController : MonoBehaviour
             {
                 takeStep = false;
 
-                planet.manager.sim.RunSimulation(1);
-                waterParticles = planet.manager.sim.GetParticles();
+                planet.manager.RunHydraulicSimulation();
+                waterParticles = planet.manager.GetHydraulicParticles();
             }
             redrawMesh = true;
                 
+        }
+
+        if (takeThermalStep)
+        {
+            takeThermalStep = false;
+            planet.manager.RunThermalSimulation();
+            redrawMesh = true;
         }
 
         if (calculate_height_delta)
@@ -164,7 +167,8 @@ public class ChunkController : MonoBehaviour
 
     void ConfigurePlanet()
     {
-        planet.ConfigurePlanet(globalRes, globalGridRes, isoLevel, interpolateVertices);
+        planetBehavior.planet_params.global_res = globalRes;
+        planetBehavior.planet_params.global_grid_res = globalGridRes;
     }
 
     void GenerateChunks(Vector3Int c)
@@ -187,7 +191,7 @@ public class ChunkController : MonoBehaviour
                         var localStartBounds = min_bounds + (new Vector3(i, j, k) * chunkSize);
                         var localEndBounds = localStartBounds + (Vector3.one * chunkSize);
                         Vector3 center = (localStartBounds + localEndBounds) / 2;
-                        var chunk_go = GameObject.Instantiate(this.chunk_go, center, Quaternion.identity, planet.transform);
+                        var chunk_go = GameObject.Instantiate(this.chunk_go, center, Quaternion.identity, planet_go.transform);
                         var chunk = chunk_go.GetComponent<Chunk>();
                         chunk.InitChunk(localStartBounds, 
                                         localEndBounds, 
@@ -234,7 +238,7 @@ public class ChunkController : MonoBehaviour
                 var localStartBounds = min_bounds + (id * chunkSize);
                 var localEndBounds = localStartBounds + (Vector3.one * chunkSize);
                 Vector3 center = (localStartBounds + localEndBounds) / 2;
-                var chunk_go = GameObject.Instantiate(this.chunk_go, center, Quaternion.identity, planet.transform);
+                var chunk_go = GameObject.Instantiate(this.chunk_go, center, Quaternion.identity, planet_go.transform);
                 var chunk = chunk_go.GetComponent<Chunk>();
                 chunk.InitChunk(localStartBounds,
                                 localEndBounds,
@@ -271,7 +275,7 @@ public class ChunkController : MonoBehaviour
                 var localStartBounds = min_bounds + (id * chunkSize);
                 var localEndBounds = localStartBounds + (Vector3.one * chunkSize);
                 Vector3 center = (localStartBounds + localEndBounds) / 2;
-                var chunk_go = GameObject.Instantiate(this.chunk_go, center, Quaternion.identity, planet.transform);
+                var chunk_go = GameObject.Instantiate(this.chunk_go, center, Quaternion.identity, planet_go.transform);
                 var chunk = chunk_go.GetComponent<Chunk>();
                 chunk.InitChunk(localStartBounds,
                                 localEndBounds,
@@ -340,10 +344,10 @@ public class ChunkController : MonoBehaviour
             var c = GridToWorld(new Vector3(x, y, z));
             if (onlyDrawInside)
                 {
-                    if (point < isoLevel)
+                    if (point < 0)
                         continue;
                 }
-                Gizmos.color = point > isoLevel ? Color.red : Color.blue;
+                Gizmos.color = point > 0 ? Color.red : Color.blue;
                 Gizmos.DrawSphere(c, 50f);
             }
         }
@@ -396,81 +400,81 @@ public class ChunkController : MonoBehaviour
     }
 
     // TODO: Needs Refactoring
-    public List<Vector3Int> GetRadialChunks()
-    {
-        var max_radius = (planet.radius+planet.radialRange) / chunkSize;
-        var min_radius = (planet.radius-planet.radialRange) / chunkSize;
-        var r2_max = max_radius*max_radius;
-        var r2_min =min_radius*min_radius;
+    // public List<Vector3Int> GetRadialChunks()
+    // {
+    //     var max_radius = (planet.radius+planet.radialRange) / chunkSize;
+    //     var min_radius = (planet.radius-planet.radialRange) / chunkSize;
+    //     var r2_max = max_radius*max_radius;
+    //     var r2_min =min_radius*min_radius;
 
-        var center = WorldToGrid(planet.coordinates);
-        var z_min = (int)(center.z - max_radius);
-        var z_max = (int)(z_min + 2 * max_radius);
-        var z_rows = z_max - z_min;
-        var chunks = new List<Vector3Int>();
+    //     var center = WorldToGrid(planet.coordinates);
+    //     var z_min = (int)(center.z - max_radius);
+    //     var z_max = (int)(z_min + 2 * max_radius);
+    //     var z_rows = z_max - z_min;
+    //     var chunks = new List<Vector3Int>();
 
-        for (int k = 0; k <= z_rows; k ++)
-        {
-            var row_z = z_min + k;
-            float dzh = 0;
+    //     for (int k = 0; k <= z_rows; k ++)
+    //     {
+    //         var row_z = z_min + k;
+    //         float dzh = 0;
 
-            if (row_z > center.z)
-                    dzh = center.z - (row_z);
-            else
-                dzh = center.z - (row_z+1);
+    //         if (row_z > center.z)
+    //                 dzh = center.z - (row_z);
+    //         else
+    //             dzh = center.z - (row_z+1);
             
-            var y_radius_max = Mathf.Sqrt(r2_max - (dzh * dzh));
+    //         var y_radius_max = Mathf.Sqrt(r2_max - (dzh * dzh));
 
-            float y_radius_min = 0;
-            if(dzh < min_radius)
-                y_radius_min = Mathf.Sqrt(r2_min - (dzh * dzh));
+    //         float y_radius_min = 0;
+    //         if(dzh < min_radius)
+    //             y_radius_min = Mathf.Sqrt(r2_min - (dzh * dzh));
 
-            var y_r2_max = y_radius_max*y_radius_max;
-            var y_r2_min = y_radius_min*y_radius_min;
+    //         var y_r2_max = y_radius_max*y_radius_max;
+    //         var y_r2_min = y_radius_min*y_radius_min;
 
-            var y_min = (int)(center.y - y_radius_max);
-            var y_max = (int)(y_min + 2 * y_radius_max);
-            var rows = y_max - y_min;
+    //         var y_min = (int)(center.y - y_radius_max);
+    //         var y_max = (int)(y_min + 2 * y_radius_max);
+    //         var rows = y_max - y_min;
             
-            for (int i = 0; i <= rows; i++)
-            {
-                var row_y = y_min + i;
-                float dh_max = 0;
-                float dh_min = 0;
+    //         for (int i = 0; i <= rows; i++)
+    //         {
+    //             var row_y = y_min + i;
+    //             float dh_max = 0;
+    //             float dh_min = 0;
 
-                if (row_y > center.y)
-                {
-                    dh_max = center.y - (row_y);
-                    dh_min = Mathf.Min((row_y+1) - center.y, y_radius_max);
-                }
-                else
-                {
-                    dh_max = center.y - (row_y+1);
-                    dh_min = Mathf.Min(center.y - (row_y), y_radius_max);
-                }
+    //             if (row_y > center.y)
+    //             {
+    //                 dh_max = center.y - (row_y);
+    //                 dh_min = Mathf.Min((row_y+1) - center.y, y_radius_max);
+    //             }
+    //             else
+    //             {
+    //                 dh_max = center.y - (row_y+1);
+    //                 dh_min = Mathf.Min(center.y - (row_y), y_radius_max);
+    //             }
 
-                float dx_min = 0;
-                if(dh_min < y_radius_min)
-                    dx_min = Mathf.Sqrt(y_r2_min - (dh_min * dh_min));
+    //             float dx_min = 0;
+    //             if(dh_min < y_radius_min)
+    //                 dx_min = Mathf.Sqrt(y_r2_min - (dh_min * dh_min));
 
-                var dx_max = Mathf.Sqrt(y_r2_max - (dh_max * dh_max));
+    //             var dx_max = Mathf.Sqrt(y_r2_max - (dh_max * dh_max));
 
 
-                //chunks.Add(RoundDownVector(new Vector3((int)(center.x-dx), row_y, row_z)));
-                //chunks.Add(RoundDownVector(new Vector3((int)(center.x+dx), row_y, row_z)));
-                for (int x = (int)(center.x-dx_max); x <= center.x-dx_min; x++)
-                {
-                    chunks.Add(RoundDownVector(new Vector3(x, row_y, row_z)));
-                }
-                for (int x = (int)(center.x+dx_min); x <= center.x+dx_max; x++)
-                {
-                    chunks.Add(RoundDownVector(new Vector3(x, row_y, row_z)));
-                }
-            }
-        }
+    //             //chunks.Add(RoundDownVector(new Vector3((int)(center.x-dx), row_y, row_z)));
+    //             //chunks.Add(RoundDownVector(new Vector3((int)(center.x+dx), row_y, row_z)));
+    //             for (int x = (int)(center.x-dx_max); x <= center.x-dx_min; x++)
+    //             {
+    //                 chunks.Add(RoundDownVector(new Vector3(x, row_y, row_z)));
+    //             }
+    //             for (int x = (int)(center.x+dx_min); x <= center.x+dx_max; x++)
+    //             {
+    //                 chunks.Add(RoundDownVector(new Vector3(x, row_y, row_z)));
+    //             }
+    //         }
+    //     }
 
-        return chunks;
-    }
+    //     return chunks;
+    // }
 
     public Vector3 WorldToGrid(Vector3 dims)
     {
@@ -494,9 +498,13 @@ public class ChunkController : MonoBehaviour
     {
         var end = RoundDownVector(WorldToGrid(max_bounds));
         var chunks = new List<Vector3Int>();
-        var center = WorldToGrid(planet.coordinates);
-        var max_radius = (planet.radius + planet.radialRange) / chunkSize;
-        var min_radius = (planet.radius - planet.radialRange) / chunkSize;
+        var center = WorldToGrid(planet_go.transform.position);
+
+        var radius = planet.planet_params.radius;
+        var radialRange = planet.planet_params.radial_range;
+
+        var max_radius = (radius + radialRange) / chunkSize;
+        var min_radius = (radius - radialRange) / chunkSize;
         bool onlyOne = max_bounds.z == chunkSize / 2;
 
         for (int i = 0; i < end.x; i++)
@@ -506,11 +514,11 @@ public class ChunkController : MonoBehaviour
                 for (int k = 0; k < end.z; k++)
                 {
                     var point = new Vector3Int(i, j, k);
-                    var radius = point-center;
-                    if(radius.magnitude > max_radius && !onlyOne)
+                    var chunkRadius = point-center;
+                    if(chunkRadius.magnitude > max_radius && !onlyOne)
                         continue;
 
-                    if(radius.magnitude < min_radius && !onlyOne)
+                    if(chunkRadius.magnitude < min_radius && !onlyOne)
                         continue;
 
                     chunks.Add(point);

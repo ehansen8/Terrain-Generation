@@ -1,147 +1,36 @@
 #pragma kernel SimplexGrid
 #pragma kernel SimulateHydraulicErosion
 #pragma kernel SimulateThermalErosion
-  
-//
-// Description : Array and textureless GLSL 2D/3D/4D simplex 
-//               noise functions.
-//      Author : Ian McEwan, Ashima Arts.
-//  Maintainer : stegu
-//     Lastmod : 20201014 (stegu)
-//     License : Copyright (C) 2011 Ashima Arts. All rights reserved.
-//               Distributed under the MIT License. See LICENSE file.
-//               https://github.com/ashima/webgl-noise
-//               https://github.com/stegu/webgl-noise
-// 
 
-float3 mod289(float3 x) {
-  return x - floor(x * (1.0 / 289.0)) * 289.0;
-}
-
-float4 mod289(float4 x) {
-  return x - floor(x * (1.0 / 289.0)) * 289.0;
-}
-
-float4 permute(float4 x) {
-     return mod289(((x*34.0)+10.0)*x);
-}
-
-float4 taylorInvSqrt(float4 r)
-{
-  return 1.79284291400159 - 0.85373472095314 * r;
-}
-
-float snoise(float3 v)
-{ 
-    const float2  C = float2(1.0/6.0, 1.0/3.0) ;
-    const float4  D = float4(0.0, 0.5, 1.0, 2.0);
-
-    // First corner
-    float3 i  = floor(v + dot(v, C.yyy) );
-    float3 x0 =   v - i + dot(i, C.xxx) ;
-
-    // Other corners
-    float3 g = step(x0.yzx, x0.xyz);
-    float3 l = 1.0 - g;
-    float3 i1 = min( g.xyz, l.zxy );
-    float3 i2 = max( g.xyz, l.zxy );
-
-    //   x0 = x0 - 0.0 + 0.0 * C.xxx;
-    //   x1 = x0 - i1  + 1.0 * C.xxx;
-    //   x2 = x0 - i2  + 2.0 * C.xxx;
-    //   x3 = x0 - 1.0 + 3.0 * C.xxx;
-    float3 x1 = x0 - i1 + C.xxx;
-    float3 x2 = x0 - i2 + C.yyy; // 2.0*C.x = 1/3 = C.y
-    float3 x3 = x0 - D.yyy;      // -1.0+3.0*C.x = -0.5 = -D.y
-
-    // Permutations
-    i = mod289(i); 
-    float4 p = permute( permute( permute( 
-                i.z + float4(0.0, i1.z, i2.z, 1.0 ))
-            + i.y + float4(0.0, i1.y, i2.y, 1.0 )) 
-            + i.x + float4(0.0, i1.x, i2.x, 1.0 ));
-
-    // Gradients: 7x7 points over a square, mapped onto an octahedron.
-    // The ring size 17*17 = 289 is close to a multiple of 49 (49*6 = 294)
-    float n_ = 0.142857142857; // 1.0/7.0
-    float3  ns = n_ * D.wyz - D.xzx;
-
-    float4 j = p - 49.0 * floor(p * ns.z * ns.z);  //  mod(p,7*7)
-
-    float4 x_ = floor(j * ns.z);
-    float4 y_ = floor(j - 7.0 * x_ );    // mod(j,N)
-
-    float4 x = x_ *ns.x + ns.yyyy;
-    float4 y = y_ *ns.x + ns.yyyy;
-    float4 h = 1.0 - abs(x) - abs(y);
-
-    float4 b0 = float4( x.xy, y.xy );
-    float4 b1 = float4( x.zw, y.zw );
-
-    //float4 s0 = float4(lessThan(b0,0.0))*2.0 - 1.0;
-    //float4 s1 = float4(lessThan(b1,0.0))*2.0 - 1.0;
-    float4 s0 = floor(b0)*2.0 + 1.0;
-    float4 s1 = floor(b1)*2.0 + 1.0;
-    float4 sh = -step(h, float4(0,0,0,0));
-
-    float4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
-    float4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
-
-    float3 p0 = float3(a0.xy,h.x);
-    float3 p1 = float3(a0.zw,h.y);
-    float3 p2 = float3(a1.xy,h.z);
-    float3 p3 = float3(a1.zw,h.w);
-
-//Normalise gradients
-    float4 norm = taylorInvSqrt(float4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
-    p0 *= norm.x;
-    p1 *= norm.y;
-    p2 *= norm.z;
-    p3 *= norm.w;
-
-// Mix final noise value
-    float4 m = max(0.5 - float4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
-    m = m * m;
-    return 105.0 * dot( m*m, float4( dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3) ) );
-}
-// ABOVE IS SIMPLEX NOISE3D Implementation
+ #include "./Utilites/Noise.compute"
 
 RWStructuredBuffer<float> gridBuffer;
 int gridRes;
 float3 start;
-float3 increments;
+float increment;
 
 float freq;
 int octaves;
 float lacunarity;
 float persistance;
 float3 offset;
-float planet_radius;
 float maskStartRadius;
 float maskEndRadius;
 float maskStrength;
-// float asymptote;
-// float curvature;
-// float mod_offset;
-// float modifier_strength;
-
-float carve_freq;
-int carve_octaves;
-float carve_lacunarity;
-float carve_persistance;
-float3 carve_offset;
-float carve_strength;
-float carve_clamp_range;
 
 // Convert indices to actual distances
 float3 ScalePosition(float3 indices)
 {
-    return start + (increments*indices);
+    return start + (increment*indices);
 }
 
 int GetGridIndex(int x, int y, int z)
 {
     return x + (y * gridRes) + (z * gridRes * gridRes);
+}
+int GetGridIndex(int3 pos, int res)
+{
+    return pos.x + (pos.y * res) + (pos.z * res * res);
 }
 
 // Create Fractal Noise
@@ -157,7 +46,7 @@ float IterateNoise(float3 pos)
     tempFreq *= lacunarity;
     tempMult *= persistance;
 
-    [loop] for (int i = 0; i < octaves-1; i++)
+    for (int i = 0; i < octaves-1; i++)
     {   
 
         // First pass freq is normal and mult is 1
@@ -190,34 +79,12 @@ float IterateNoise(float3 pos)
     return value;
 }
 
-// Create Fractal Noise
-float CarveNoise(float3 pos)
-{
-    float value = 0;
-    float tempFreq = carve_freq;
-    float tempMult = 1;
-    float3 off = float3(carve_offset.x,carve_offset.y,carve_offset.z);
-
-    for (int i = 0; i < carve_octaves; i++)
-    {   
-
-        // First pass freq is normal and mult is 1
-        // 
-
-        
-        value += (-abs(snoise(((off+pos)*tempFreq)))+1) * tempMult;
-        tempFreq *= carve_lacunarity;
-        tempMult *= carve_persistance;
-    }
-
-    return clamp(value*carve_strength,0,carve_clamp_range);
-}
-
-
 struct HydroCell
 {
     float2x4 p;
 };
+
+float planet_radius;
 
 float SimpleSphere(float3 pos)
 {   //Sphere
@@ -255,11 +122,6 @@ HydroCell GetCell(int3 id)
     cell.p[1][3] = gridBuffer[GetGridIndex(id.x + 1, id.y + 1, id.z)];
 
     return cell;
-}
-
-int GetGridIndex(int3 pos, int res)
-{
-    return pos.x + (pos.y * res) + (pos.z * res * res);
 }
 
 float L(HydroCell cell, float3 pos)
@@ -311,7 +173,7 @@ struct Material
 
 int3 GetClosestCell(float3 pos)
 {
-    return int3(pos - start) / increments.x;
+    return int3(pos - start) / increment;
 }
 
 
@@ -368,9 +230,6 @@ void UpdateNeighbors(float3 id, float delta_s)
 }
 
 
-
-
-
 // ^^^ RWStructuredBuffer<float4> grid;
 RWStructuredBuffer<Water> waterBuffer;
 
@@ -380,7 +239,7 @@ void SimulateHydraulicErosion(int3 Tid : SV_DispatchThreadID)
 {
     Water p = waterBuffer[Tid.x];
     float step_size = P_step_size;
-    float step_dist = step_size * increments.x;
+    float step_dist = step_size * increment;
 
     while (p.water > P_min_water)
     {
@@ -456,18 +315,13 @@ void SimulateHydraulicErosion(int3 Tid : SV_DispatchThreadID)
         if (collided == 0)
             delta_s = 0;
 
-        UpdateNeighbors(p.pos, delta_s/8);
+        UpdateNeighbors(p.pos, delta_s / 8);
 
         p.water *= (1 - P_evaporation); // constant evaporation rate
         p.sediment += delta_s;
         p.pos = pos_new;
     }
     waterBuffer[Tid.x] = p;
-}
-
-int GetGridIndex(int3 pos, int res)
-{
-    return pos.x + (pos.y * res) + (pos.z * res * res);
 }
 
 
@@ -488,6 +342,36 @@ float3 N_Grid(int3 pos)
     return -1 * normalize(float3(ix.x-ix.y, iy.x-iy.y, iz.x-iz.y));
 }
 
+//Finite Difference 3rd Order Approximation
+//2*f(x+h) + 3*f(x) - 6*f(x-h) + f(x-2*h)
+float FD3(float x_plus, float x, float x_minus, float x_2minus)
+{
+    return (2*x_plus) + (3*x) - (6*x_minus) + (x_2minus);
+}
+
+//Attempt at a 3rd-Order calculation
+float3 N_Grid_Proto(int3 pos)
+{
+    //2*f(x+h) + 3*f(x) - 6*f(x-h) + f(x-2*h)
+    float x = gridBuffer[GetGridIndex(pos, gridRes)];
+    float3 hp;
+    float3 hm;
+    float3 h2m;
+
+    hp.x = gridBuffer[GetGridIndex(pos + int3(1, 0, 0), gridRes)];
+    hp.y = gridBuffer[GetGridIndex(pos + int3(0, 1, 0), gridRes)];
+    hp.z = gridBuffer[GetGridIndex(pos + int3(0, 0, 1), gridRes)];
+
+    hm.x = gridBuffer[GetGridIndex(pos + int3(-1, 0, 0), gridRes)];
+    hm.y = gridBuffer[GetGridIndex(pos + int3(0, -1, 0), gridRes)];
+    hm.z = gridBuffer[GetGridIndex(pos + int3(0, 0, -1), gridRes)];
+
+    h2m.x = gridBuffer[GetGridIndex(pos + int3(-2, 0, 0), gridRes)];
+    h2m.y = gridBuffer[GetGridIndex(pos + int3(0, -2, 0), gridRes)];
+    h2m.z = gridBuffer[GetGridIndex(pos + int3(0, 0, -2), gridRes)];
+
+    return -1 * normalize(float3(FD3(hp.x,x,hm.x,h2m.x), FD3(hp.y,x,hm.y,h2m.y), FD3(hp.z,x,hm.z,h2m.z)));
+}
 // inputs should be unit vectors
 // output is in degrees
 float CalcAngle(float3 v1, float3 v2)
@@ -495,57 +379,222 @@ float CalcAngle(float3 v1, float3 v2)
     return degrees(acos(dot(v1,v2)));
 }
 
-//Used above ^^^ RWStructuredBuffer<Water> waterBuffer;
+float max3 (float3 v) 
+{
+  return max (max (v.x, v.y), v.z);
+}
+
+struct test
+{
+    int3 Tid;
+    int GI;
+    float phi;
+    float3 n;
+    float3 g;
+    float a;
+    float delta_s;
+    int3 dir;
+
+};
+
+// When adding to neighbor, only add if neighbor value is less than a certain amount
+// and then only add up to that amount. Return the amount that was actually added
+float TryAddToNeighbor(int neighbor_index, float amount, float min_lim, float max_lim)
+{
+    float val = gridBuffer[neighbor_index];
+    
+    float lim = (amount >= 0) ? max_lim : min_lim;
+    
+    float can_add = lim - val;
+
+    float to_add = clamp(can_add, step(amount, 0) * amount, step(0, amount) * amount);
+
+    gridBuffer[neighbor_index] += to_add;
+    return to_add;
+}
+
+// delta_s should be the total amount to be removed from all
+float UpdateNeighborsThermal(float3 id, float total_s)
+{
+    //positive delta_s is the mass eroding to neighbors
+    float delta_s = total_s;
+    delta_s -= TryAddToNeighbor(GetGridIndex(id.x, id.y, id.z), delta_s/8, -1 , 1);
+    delta_s -= TryAddToNeighbor(GetGridIndex(id.x, id.y, id.z + 1), delta_s/7, -1, 1);
+    delta_s -= TryAddToNeighbor(GetGridIndex(id.x + 1, id.y, id.z + 1), delta_s/6, -1, 1);
+    delta_s -= TryAddToNeighbor(GetGridIndex(id.x + 1, id.y, id.z), delta_s/5, -1, 1);
+    delta_s -= TryAddToNeighbor(GetGridIndex(id.x, id.y + 1, id.z), delta_s/4, -1, 1);
+    delta_s -= TryAddToNeighbor(GetGridIndex(id.x, id.y + 1, id.z + 1), delta_s/3, -1, 1);
+    delta_s -= TryAddToNeighbor(GetGridIndex(id.x + 1, id.y + 1, id.z + 1), delta_s/2, -1, 1);
+    delta_s -= TryAddToNeighbor(GetGridIndex(id.x + 1, id.y + 1, id.z), delta_s/1, -1, 1);
+
+    return total_s-delta_s; // amount added
+}
+
+RWStructuredBuffer<test> testBuffer;
 float talus_angle;
 float min_sediment_loss;
+float t_step_size;
+float impacts;
 
-[numthreads(1024, 1, 1)]
+float L_With_Cell(float3 pos)
+{
+    
+    int3 voxel = int3(pos);
+    float3 frac = pos - voxel;
+    HydroCell cell = GetCell(voxel);
+
+    float4 ix = lerp(cell.p._m00_m01_m10_m11, cell.p._m03_m02_m13_m12, frac.x);
+    // z=0: x.03, y.12, | z=1: z.47, w.56
+
+    float2 ixz = lerp(ix.xz, ix.yw, frac.z);
+    // y=0: x.0312, | y=1: y.4756
+
+    return lerp(ixz.x, ixz.y, frac.y);
+}
+
+// Trilinear Interpolation of normal
+float3 N_With_Cell(float3 pos)
+{
+    int3 voxel = int3(pos);
+    float3 frac = pos - voxel;
+    HydroCell cell = GetCell(voxel);
+
+    //Lerp values between x's
+    float4 ix = lerp(cell.p._m00_m01_m10_m11, cell.p._m03_m02_m13_m12, frac.x);
+    // z=0: x.03, y.12 | z=1: z.47, w.56
+
+    //Lerp values between y's
+    float4 iy = lerp(cell.p._m00_m01_m02_m03, cell.p._m10_m11_m12_m13, frac.y);
+    // x=0: x.04, y.15 | x=1: z.26, w.37
+
+    float2 ixy = lerp(ix.xy, ix.zw, frac.y);
+    float2 ixz = lerp(ix.xz, ix.yw, frac.z);
+    float2 iyz = lerp(iy.xw, iy.yz, frac.z);
+    float dx = iyz.x - iyz.y;
+    float dy = ixz.x - ixz.y;
+    float dz = ixy.x - ixy.y;
+
+    return -1*normalize(float3(dx, dy, dz));
+}
+
+bool IsInvalidAngle(float a)
+{
+    return (a <= 90) || (a >= 180 - talus_angle);
+}
+
+float3 FindSurfaceFromNormal(float3 pos, float3 n, float step_size)
+{
+    while (L_With_Cell(pos) >= 0)
+    {
+        pos += n * (step_size);
+    }
+
+    return pos;
+}
+
+float3 FallTowardsSurface(float3 pos, float3 dir, float step_size)
+{
+    while (L_With_Cell(pos) <= 0)
+    {
+        pos += dir * (step_size);
+    }
+
+    return pos;
+}
+
+[numthreads(8, 8, 8)]
 void SimulateThermalErosion(int3 Tid : SV_DispatchThreadID)
 {
+    if (Tid.x >= gridRes)
+        return;
+    if (Tid.y >= gridRes)
+        return;
+    if (Tid.z >= gridRes)
+        return;
+
     // Tid is equivalent to grid position
-    float3 pos = Tid;
-
+    int GI = GetGridIndex(Tid, gridRes);
+    
     // Should test w/ and without running on only positive grid points vs all grid points
-    float phi = gridBuffer[GetGridIndex(pos, gridRes)];
-    if(phi <= 0)
-        return;
+    float phi = gridBuffer[GI];
 
-    //Calculate normal of point
-    float3 n = N_Grid(pos)
-
-    // normal == 0, we should quit
-    if(n == float3(0,0,0))
-        return;
+    test t;
+    t.Tid = Tid;
+    t.GI = GI;
+    t.phi = phi;
+    t.n = float3(0,0,0);
+    t.g = float3(0,0,0);
+    t.a = -1;
+    t.dir = int3(-5,-5,-5);
+    t.delta_s = -2;
+    testBuffer[GI] = t;
+    if(phi < 0) {return;}
+    
+    //Calculate normal of grid point
+    float3 n = N_Grid(Tid);
+    t.n = n;
+    if(length(n) == 0) {return;}
 
     //Determine direction
-    float3 g = G(pos);
+    float3 g = G(Tid);
+    t.g = g;
+    testBuffer[GI] = t;
+    // catches case for 0,0,0 grid point
+    if (any(isnan(g))) {return;}
 
-    // Determine current angle of grid point
-    float3 a = CalcAngle(n,g);
+    // take step in normal direction
+    // if still > 0 => probably an internal point
+    if (L_With_Cell(Tid+n) >= 0) {return;}
 
-    // Can modify later, but may run into problems for overhangs. So quit if Terrain angle is too large
+    float3 pos = Tid;
+    pos = FindSurfaceFromNormal(pos, n, t_step_size/2);
+
+    n = -1 * N_With_Cell(pos);
+    float a = CalcAngle(n,g);
+
+    t.n = n;
+    t.a = a;
+
     // Also quit if angle is less than talus angle + 90
     // If terrain is @ angle Theta -> normal = Theta + 90
-    if((a <= 90) || (a >= 90 + talus_angle))
-        return;
+    testBuffer[GI] = t;
+    if(IsInvalidAngle(a)) {return;}
+    
+    //------  Currently at Surface w/m surface normal calculated
 
-    // If we made it this far -> angle is in critical range and grid point needs to lose mass
-
-    //Scale so max component == 1
-    float scale = max(g);
-
-    // Calculate offset to reach closest grid point in direction of gravity
-    // May need a check if scale == 0;
-    // 1: map abs() of components >= 0.5 -> 1, else 0
-    // 2: multiply by the sign of original gravity vector to make up for abs()
-    float3 dir = sign(g) * step(float3(0.5,0.5,0.5), abs(g / scale));
-
-    // transfer amount is min of half of current grid point sediment, and pre-determined amount
-    float delta_s = min(phi/2, min_sediment);
+    //Now that we have stepped away from grid point => turn into particle and fall down in direction of gravity
+    
+    // We are assuming we are starting at the surface w/ normal and angle already calculated
+    // Step 1: Take step in normal direction
+    // Step 2: Fall in direction of gravity until phi >= 0
+    // Step 3: Calculate n and angle w/ gravity
+    // Step 3a: Find Surface
+    // Step 3b: Deposit Material
+    // Repeat
 
 
+    t.dir = pos;
+    testBuffer[GI] = t;
+    float delta_s = -1*UpdateNeighborsThermal(Tid, -min_sediment_loss);
+    while( delta_s > 0)
+    {
+        //Step 1
+        pos += n;
 
+        //Step 2
+        g = G(pos);
+        pos = FallTowardsSurface(pos, g, t_step_size);
 
+        //Step3
+        n = -1 * N_With_Cell(pos);
+        float a = CalcAngle(n,g);
+        pos = FindSurfaceFromNormal(pos, n, t_step_size/2);
+
+        //delta_s loses amount added, then is distributed evenly between remaining impacts
+        delta_s -= UpdateNeighborsThermal(int3(pos), delta_s);
+    }
+    t.delta_s = delta_s;
+    testBuffer[GI] = t;
 }   
 
 

@@ -1,9 +1,10 @@
 {
     "name": "_Tests",
-    "rootNamespace": "",
+    "rootNamespace": "Tests",
     "references": [
         "GameAssembly",
-        "UnityEngine.UI.Tests"
+        "UnityEngine.UI.Tests",
+        ""
     ],
     "includePlatforms": [
         "Editor"
@@ -12,7 +13,7 @@
     "allowUnsafeCode": false,
     "overrideReferences": true,
     "precompiledReferences": [],
-    "autoReferenced": false,
+    "autoReferenced": true,
     "defineConstraints": [
         "UNITY_INCLUDE_TESTS"
     ],

@@ -2,30 +2,26 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-public class PlanetParameters : MonoBehaviour
+[System.Serializable]
+public class PlanetParameters
 {
     // Planet Parameters
     public float radius;
-    [Range(0.0001f, 2)]
-    public float frequency;
-    public float size_frequency_ratio;
-    [Range(1,8)]
-    public int octaves;
-    [Range(1, 3)]
-    public float lacunarity;
-    [Range(0, 1)]
-    public float persistance;
-    public Vector3 offset;
-    [Range(0.1f, 5)]
-    public float asymptote;
-    [Range(0.01f, 0.5f)]
-    public float curvature;
-    [Range(0, 3)]
-    public float mod_offset;
-    [Range(0,1)]
-    public float initial_amplitude;
-    [Range(0,1)]
-    public float clampRange;
+    public float atmosphere;
+    public float radial_range;
+    public int global_res;
+    public int global_grid_res;
+    [HideInInspector]
+    public Vector3 start_coordinates { get { return -Vector3.one * radius; } }
+    public float increment { get { return bounds.x / global_res; } }
+    public Vector3 bounds { get { return Vector3.one * 2 * (radius + atmosphere); } }
 
-    public float modifier_strength;
+    public PlanetParameters(float radius, float atmosphere, float radial_range, int global_res, int global_grid_res)
+    {
+        this.radius = radius;
+        this.atmosphere = atmosphere;
+        this.radial_range = radial_range;
+        this.global_res = global_res;
+        this.global_grid_res = global_grid_res;
+    }
 }

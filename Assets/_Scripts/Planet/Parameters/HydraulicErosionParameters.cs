@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 [System.Serializable]
-public class ErosionParameters
+public class HydraulicErosionParameters
 {
     public int num_particles = 1024*12;
     public float P_step_size = 1;

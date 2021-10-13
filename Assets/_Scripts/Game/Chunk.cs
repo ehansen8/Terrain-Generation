@@ -2,13 +2,14 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+//TODO Splite Chunk into Chunk and ChunkBehavior
 public class Chunk : MonoBehaviour
 {
     public int initial_res;
     public int initial_grid_res;
     public int final_res;
     public int final_grid_res;
-    public Vector3 increments;
+    public float increment;
     public int res_factor;
     public int[] grid_offset;
     public float[] pos_offset;
@@ -39,7 +40,7 @@ public class Chunk : MonoBehaviour
         var coll = this.GetComponentInParent<BoxCollider>();
         coll.size = size;
 
-        this.increments = size / final_res;
+        this.increment = size.x / final_res;
 
         
 

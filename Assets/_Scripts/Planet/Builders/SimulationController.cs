@@ -4,43 +4,35 @@ using UnityEngine;
 
 public class SimulationController
 {
-    public ErosionSimulation erosionSim;
-    public Planet planet;
-    public int sim_size;
-    public SimulationController(Planet planet)
+    public ThermalErosionSimulation thermalSim;
+    public HydraulicErosionSimulation hydraulicSim;
+    
+    public SimulationController(ThermalErosionParameters thermalParams, 
+                                HydraulicErosionParameters hydraulicParams, 
+                                PlanetParameters planetParams, 
+                                Grid grid)
     {
-        this.sim_size = 1024 * 12;
-        this.planet = planet;
-
-        erosionSim = new ErosionSimulation(planet, sim_size, planet.simplex);
-        erosionSim.Initialize(planet.global_res,
-                                planet.global_grid_res,
-                                planet.increments,
-                                planet.start_coordinates);
-
-
+        thermalSim = new ThermalErosionSimulation(thermalParams, planetParams, grid);
+        hydraulicSim = new HydraulicErosionSimulation(hydraulicParams, grid);
     }
 
-    public void RunSimulation(int steps)
+    public void RunHydraulicSim()
     {
-        erosionSim.NewParticleBatch();
+        hydraulicSim.Run();
     }
 
-    public void SingleStepSim()
+    public void RunThermalSim()
     {
-        erosionSim.DispatchShader();
+        thermalSim.Run();
     }
 
-    public Water[] GetParticles()
+    public Water[] GetHydraulicParticles()
     {
-        var data = new Water[planet.erosion_params.num_particles];
-        erosionSim.waterBuffer.GetData(data);
-
-        return data;
+        return hydraulicSim.GetParticles();
     }
 
-    public void SimulateBiomes()
+    public void ReleaseBuffers()
     {
-        
+        hydraulicSim.ReleaseBuffers();
     }
 }

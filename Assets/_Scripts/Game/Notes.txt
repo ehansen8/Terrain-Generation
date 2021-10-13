@@ -1,0 +1,45 @@
+--- Shader Parameters ---
+
+GridShader:
+    1. global_grid_res
+
+
+    ComputeShader = 3dSimplexNoise
+        Grid
+            01. gridRes
+            02. start
+            03. increment
+            04. gridBuffer
+
+        Noise
+            05. freq
+            06. octaves
+            07. lacunarity
+            08. persistance
+            09. offset
+            10. maskStartRadius
+            11. maskEndRadius
+            12. maskStrength
+
+MeshShader:
+
+    ComputeShader = MarchCubes
+        Chunk -> Form of grid really
+            01. chunk_grid_res
+            02. oversize_chunk_grid_res
+            04. increment
+            05. gridPosOffset
+
+        Mesh
+            06. interpolate
+        
+        Buffers
+            07. vCount
+            08. ordered_vertex_buffer
+            09. osChunkBuffer
+            10. chunkBuffer
+            11. normalBuffer
+            12. vertexBuffer
+            12. triBuffer
+
+

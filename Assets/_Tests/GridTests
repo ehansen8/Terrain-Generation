@@ -1,0 +1,23 @@
+using System.Collections;
+using System.Collections.Generic;
+using NUnit.Framework;
+using UnityEngine;
+using UnityEngine.TestTools;
+using GameAssembly;
+
+public class GridTests
+{
+    // [Test]
+    // [TestCase(9)]
+    // [TestCase(10)]
+    // [TestCase(17)]
+    // [TestCase(8)]
+    public void GridIsCorrectSize(int grid_res)
+    {
+        var planetParameters = new PlanetParameters(radius=10, atmosphere=10, radial_range=10, global_res=grid_res, global_grid_res = grid_res+1);
+        var noiseParameters = new NoiseParameters();
+
+        var gridShader = new GridShader(planetParameters, noiseParameters);
+        gridShader.
+    }
+}

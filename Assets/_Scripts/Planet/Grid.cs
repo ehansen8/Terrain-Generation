@@ -20,4 +20,9 @@ public class Grid
 
         return grid;
     }
+
+    public void ReleaseBuffer()
+    {
+        gridBuffer.Release();
+    }
 }

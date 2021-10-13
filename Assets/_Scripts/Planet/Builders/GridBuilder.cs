@@ -5,20 +5,18 @@ using UnityEngine;
 public class GridBuilder
 {
     public GridShader gridShader;
-    public Planet planet;
+    public PlanetParameters planetParameters;
+    public NoiseParameters noiseParameters;
 
-    public GridBuilder(Planet planet)
+    public GridBuilder(PlanetParameters planetParameters, NoiseParameters noiseParameters)
     {
-        this.planet = planet;
-        gridShader = new GridShader(planet, planet.simplex);
-        gridShader.Initialize(planet.global_res,
-                                    planet.global_grid_res,
-                                    planet.increments,
-                                    planet.start_coordinates);
+        this.planetParameters = planetParameters;
+        this.noiseParameters = noiseParameters;
+        gridShader = new GridShader(planetParameters, noiseParameters);
     }
 
-    public Grid BuildGrid()
+    public Grid Build()
     {
-        return new Grid(gridShader.GetGridBuffer(), planet.global_grid_res);
+        return new Grid(gridShader.GetGridBuffer(), planetParameters.global_grid_res);
     }
 }

@@ -1,7 +1,9 @@
 {
     "name": "GameAssembly",
     "rootNamespace": "Game",
-    "references": [],
+    "references": [
+        ""
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
