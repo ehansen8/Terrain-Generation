@@ -36,36 +36,35 @@
     <ImplicitlyExpandDesignTimeFacades>false</ImplicitlyExpandDesignTimeFacades>
   </PropertyGroup>
   <ItemGroup>
-     <Compile Include="Assets\_Scripts\Temp_Tests.cs" />
+     <Compile Include="Assets\_Scripts\Shaders\HydraulicShader.cs" />
+     <Compile Include="Assets\_Scripts\Game\Utilities.cs" />
+     <Compile Include="Assets\_Scripts\Planet\Parameters\HydraulicErosionParameters.cs" />
      <Compile Include="Assets\_Scripts\Planet\Builders\MeshBuilder.cs" />
+     <Compile Include="Assets\_Scripts\Planet\Parameters\NoiseParameters.cs" />
      <Compile Include="Assets\_Scripts\Old Functions\MeshGen.cs" />
      <Compile Include="Assets\_Scripts\Structs.cs" />
      <Compile Include="Assets\_Scripts\Game\ChunkController.cs" />
      <Compile Include="Assets\_Scripts\Planet\Grid.cs" />
      <Compile Include="Assets\_Scripts\Noise Functions\Noise.cs" />
      <Compile Include="Assets\_Scripts\Planet\Builders\GridBuilder.cs" />
-     <Compile Include="Assets\_Scripts\TemporaryShaderTester.cs" />
      <Compile Include="Assets\_Scripts\Old Functions\Triangulation.cs" />
      <Compile Include="Assets\_Scripts\Planet\Parameters\ThermalErosionParameters.cs" />
      <Compile Include="Assets\_Scripts\Planet\Builders\SimulationController.cs" />
      <Compile Include="Assets\_Scripts\Planet\PlanetManager.cs" />
      <Compile Include="Assets\_Scripts\PlayerMovement.cs" />
+     <Compile Include="Assets\_Scripts\Shaders\ChunkShader.cs" />
+     <Compile Include="Assets\_Scripts\Planet\Builders\PlanetBuilder.cs" />
      <Compile Include="Assets\_Scripts\Planet\Parameters\PlanetParameters.cs" />
      <Compile Include="Assets\_Scripts\Game\Chunk.cs" />
      <Compile Include="Assets\_Scripts\Planet\Planet.cs" />
      <Compile Include="Assets\_Scripts\Noise Functions\NoiseSample.cs" />
-     <Compile Include="Assets\_Scripts\Old Functions\GridCell.cs" />
-     <Compile Include="Assets\_Scripts\Planet\PlanetBehavior.cs" />
-     <Compile Include="Assets\_Scripts\Game\Utilities.cs" />
-     <Compile Include="Assets\_Scripts\Planet\Builders\PlanetBuilder.cs" />
-     <Compile Include="Assets\_Scripts\Planet\Parameters\HydraulicErosionParameters.cs" />
-     <Compile Include="Assets\_Scripts\Planet\Parameters\NoiseParameters.cs" />
-     <Compile Include="Assets\_Scripts\Planet\Parameters\MeshParameters.cs" />
-     <Compile Include="Assets\_Scripts\Shaders\HydraulicShader.cs" />
      <Compile Include="Assets\_Scripts\Shaders\GridShader.cs" />
      <Compile Include="Assets\_Scripts\Shaders\ThermalShader.cs" />
-     <Compile Include="Assets\_Scripts\Shaders\ChunkShader.cs" />
      <Compile Include="Assets\_Scripts\Shaders\MeshShader.cs" />
+     <Compile Include="Assets\_Scripts\Planet\PlanetBehavior.cs" />
+     <Compile Include="Assets\_Scripts\Old Functions\GridCell.cs" />
+     <Compile Include="Assets\_Scripts\Planet\Parameters\MeshParameters.cs" />
+     <Compile Include="Assets\_Scripts\Game\ChunkBehavior.cs" />
      <None Include="Assets\_Scripts\Shaders\Resources\MarchCubes.compute" />
      <None Include="Assets\_Scripts\Shaders\Resources\Utilites\Noise.compute" />
      <None Include="Assets\_Scripts\Game\Notes.txt" />

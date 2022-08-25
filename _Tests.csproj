@@ -36,7 +36,10 @@
     <ImplicitlyExpandDesignTimeFacades>false</ImplicitlyExpandDesignTimeFacades>
   </PropertyGroup>
   <ItemGroup>
+     <Compile Include="Assets\_Tests\GridTests.cs" />
      <Compile Include="Assets\_Tests\ThermalErosionTests.cs" />
+     <Compile Include="Assets\_Tests\MeshTests.cs" />
+     <Compile Include="Assets\_Tests\ChunkTests.cs" />
      <None Include="Assets\_Tests\_Tests.asmdef" />
     <Reference Include="UnityEngine">
         <HintPath>D:\Program Files\2021.1.24f1\Editor\Data\Managed\UnityEngine\UnityEngine.dll</HintPath>
