@@ -8,8 +8,11 @@ public class ChunkController : MonoBehaviour
     //make sure dimensions are uniform for now so global chunk size is consistant
     public Vector3 min_bounds;
     public Vector3 max_bounds;
+    public Vector3 totalSize;
     public bool takeStep;
     public int simSteps;
+    public bool takeThermalStep = false;
+    public bool calculate_height_delta = true;
     public bool buildChunks;
     public bool clearGrid;
     public bool redrawMesh;
@@ -26,7 +29,6 @@ public class ChunkController : MonoBehaviour
     public int globalGridRes;
 
     // MC parameters
-    public float isoLevel = 0;
     public bool drawGrid = true;
     public bool onlyDrawInside = true;
     public bool drawVertices = true;
@@ -39,54 +41,63 @@ public class ChunkController : MonoBehaviour
     public ComputeShader marchShader;
 
     public GameObject planet_go;
+    public PlanetBehavior planetBehavior;
     Planet planet;
     public Transform player;
 
-
-    MarchingCubes MC;
     Dictionary<(int,int,int),Transform> activeChunks;
     List<Vector3Int> radialChunks;
+    List<Vector3Int> allChunks;
     public Transform chunk_go;
     public Vector3Int chunkDims;
-
-    // Debugging
-    public List<(Vector3 center, Vector3 size)> boxCoords;
-    //public List<EdgeStruct[]> gridList;
     public List<Vector4[]> gridList;
-    public List<List<Water>> particlesList;
-    public Gradient particleGradient;
-
+    public Water[] waterParticles;
 
     private Vector4[] grid;
+
+    private float lastRedrawTime = 0;
+    public float timeBetweenRedraw;
+
+    public float min_vertex_radius = Mathf.Infinity;
+    public float max_vertex_radius = 0;
+    public float max_height_delta;
 
 
     void Start()
     {
-        planet = planet_go.GetComponent<Planet>();
-        particlesList = new List<List<Water>>();
-
+        planetBehavior = planet_go.GetComponent<PlanetBehavior>();
         RefreshGlobalParameters();
+        ConfigurePlanet();
+        planet = planetBehavior.CreatePlanet();
+
+        waterParticles = new Water[0];
+
+        
 
         activeChunks = new Dictionary<(int, int, int), Transform>();
-        
-        ConfigurePlanet();
-        radialChunks = GetRadialChunks();
+
+        //radialChunks = GetRadialChunks();
+
+        allChunks = GetAllChunks();
     }
 
     void RefreshGlobalParameters()
     {
-        min_bounds = -1 * planet.bounds / 2;
-        max_bounds = planet.bounds / 2;
-
-        chunkDims = RoundUpVector((max_bounds - min_bounds) / chunkSize);
+        min_bounds = -1 * planetBehavior.planet_params.bounds / 2;
+        max_bounds = planetBehavior.planet_params.bounds / 2;
+        totalSize = (max_bounds - min_bounds);
+        chunkDims = RoundUpVector( totalSize / chunkSize);
+        
         globalRes = Mathf.Max(chunkDims.x, chunkDims.y, chunkDims.z) * chunkRes;
         globalGridRes = globalRes + 1;
+
     }
 
     private void Update()
     {
-        if (clearGrid || alwaysRedraw)
+        if (clearGrid || (alwaysRedraw && CanRedraw()))
         {
+            calculate_height_delta = true;
             clearGrid = false;
             RefreshGlobalParameters();
             planet.ClearGrid();
@@ -98,8 +109,9 @@ public class ChunkController : MonoBehaviour
             activeChunks.Clear();
         }
 
-        if(redrawMesh || alwaysRedraw)
+        if(redrawMesh || (alwaysRedraw && CanRedraw()))
         {
+            calculate_height_delta = true;
             redrawMesh = false;
             foreach (var p in activeChunks.Values)
             {
@@ -115,31 +127,48 @@ public class ChunkController : MonoBehaviour
             for (int j = 0; j < simSteps; j++)
             {
                 takeStep = false;
-                //Water[] particles = 
-                planet.manager.sim.RunSimulation(1);
 
-                //for (int i = 0; i < particles.Length; i++)
-                //{
-                //    if (this.particlesList.Count <= i)
-                //    {
-                //        this.particlesList.Insert(i, new List<Water>());
-                //        this.particlesList[i].Add(particles[i]);
-                //    }
-                //    else
-                //    {
-                //        this.particlesList[i].Add(particles[i]);
-                //    }
-                //} 
+                planet.manager.RunHydraulicSimulation();
+                waterParticles = planet.manager.GetHydraulicParticles();
             }
             redrawMesh = true;
                 
+        }
+
+        if (takeThermalStep)
+        {
+            takeThermalStep = false;
+            planet.manager.RunThermalSimulation();
+            redrawMesh = true;
+        }
+
+        if (calculate_height_delta)
+        {
+            calculate_height_delta = false;
+            max_vertex_radius = 0;
+            min_vertex_radius = Mathf.Infinity;
+            foreach (var chunk in activeChunks.Values)
+            {
+                var mesh = chunk.GetComponent<MeshFilter>().mesh;
+                foreach (var v in mesh.vertices)
+                {
+                    var mag = v.magnitude;
+                    if(mag > max_vertex_radius)
+                        max_vertex_radius = mag;
+                    
+                    if(mag < min_vertex_radius)
+                        min_vertex_radius = mag;
+                }
+            }
+            max_height_delta = max_vertex_radius - min_vertex_radius;
         }
 
     }
 
     void ConfigurePlanet()
     {
-        planet.ConfigurePlanet(globalRes, globalGridRes, isoLevel, interpolateVertices);
+        planetBehavior.planet_params.global_res = globalRes;
+        planetBehavior.planet_params.global_grid_res = globalGridRes;
     }
 
     void GenerateChunks(Vector3Int c)
@@ -162,7 +191,7 @@ public class ChunkController : MonoBehaviour
                         var localStartBounds = min_bounds + (new Vector3(i, j, k) * chunkSize);
                         var localEndBounds = localStartBounds + (Vector3.one * chunkSize);
                         Vector3 center = (localStartBounds + localEndBounds) / 2;
-                        var chunk_go = GameObject.Instantiate(this.chunk_go, center, Quaternion.identity, planet.transform);
+                        var chunk_go = GameObject.Instantiate(this.chunk_go, center, Quaternion.identity, planet_go.transform);
                         var chunk = chunk_go.GetComponent<Chunk>();
                         chunk.InitChunk(localStartBounds, 
                                         localEndBounds, 
@@ -209,7 +238,7 @@ public class ChunkController : MonoBehaviour
                 var localStartBounds = min_bounds + (id * chunkSize);
                 var localEndBounds = localStartBounds + (Vector3.one * chunkSize);
                 Vector3 center = (localStartBounds + localEndBounds) / 2;
-                var chunk_go = GameObject.Instantiate(this.chunk_go, center, Quaternion.identity, planet.transform);
+                var chunk_go = GameObject.Instantiate(this.chunk_go, center, Quaternion.identity, planet_go.transform);
                 var chunk = chunk_go.GetComponent<Chunk>();
                 chunk.InitChunk(localStartBounds,
                                 localEndBounds,
@@ -227,12 +256,50 @@ public class ChunkController : MonoBehaviour
         }
             
     }
+    void GenerateChunksV3(List<Vector3Int> chunkList, Vector3Int c)
+    {
+        var chunksPerUpdate = 10;
+        var count = 0;
+        foreach (var id in chunkList)
+        {
+            if(count > chunksPerUpdate)
+                break;
+
+            if (activeChunks.ContainsKey((id.x,id.y,id.z)))
+            {
+                continue;
+            }
+            else
+            {
+                
+                var localStartBounds = min_bounds + (id * chunkSize);
+                var localEndBounds = localStartBounds + (Vector3.one * chunkSize);
+                Vector3 center = (localStartBounds + localEndBounds) / 2;
+                var chunk_go = GameObject.Instantiate(this.chunk_go, center, Quaternion.identity, planet_go.transform);
+                var chunk = chunk_go.GetComponent<Chunk>();
+                chunk.InitChunk(localStartBounds,
+                                localEndBounds,
+                                new int[] { id.x * chunkRes, id.y * chunkRes, id.z * chunkRes },
+                                chunkRes,
+                                chunkRes + 1,
+                                resolution_factor,
+                                addNoise);
+
+                var mesh = planet.GetChunkMesh(chunk, chunk_go);
+                chunk_go.GetComponent<MeshFilter>().mesh = mesh;
+                chunk_go.GetComponent<MeshCollider>().sharedMesh = mesh; 
+                activeChunks.Add((id.x, id.y, id.z), chunk_go);
+                count++;
+            }
+        }
+            
+    }
 
     void BuildClosestChunks()
     {
         var closestChunkIdx = RoundDownVector((player.position-min_bounds) / chunkSize);
         //GenerateChunks(closestChunkIdx);
-        GenerateChunksV2(radialChunks, closestChunkIdx);
+        GenerateChunksV3(allChunks, closestChunkIdx);
     }
 
     
@@ -277,67 +344,33 @@ public class ChunkController : MonoBehaviour
             var c = GridToWorld(new Vector3(x, y, z));
             if (onlyDrawInside)
                 {
-                    if (point < isoLevel)
+                    if (point < 0)
                         continue;
                 }
-                Gizmos.color = point > isoLevel ? Color.red : Color.blue;
-                Gizmos.DrawSphere(c, 0.5f);
+                Gizmos.color = point > 0 ? Color.red : Color.blue;
+                Gizmos.DrawSphere(c, 50f);
             }
         }
 
-        if (drawParticles && particlesList != null)
+        if (drawParticles && waterParticles != null)
         {
-            foreach (var particles in particlesList)
+            foreach (var p in waterParticles)
             {
-                var c = particles.Count;
-                for (int i = 0; i < c; i++)
-                {
-                    var p = particles[i];
-                    var pos = GridToWorld(p.pos);
-
-                
-
-                    if (i == c-1) // last particle
-                    {
-                        Gizmos.color = Color.blue;
-                        Gizmos.DrawSphere(pos, 0.1f);
-                        //UnityEditor.Handles.Label(pos - Vector3.one * 3, $"water: {p.water} \n" +
-                        //                                                $"sediment: {p.sediment} \n" +
-                        //                                                $"phi: {p.phi} \n" +
-                        //                                                $"vel: {p.vel.magnitude} \n" +
-                        //                                                $"air_f: {p.tangent.magnitude} \n" +
-                        //                                                $"surf_f: {p.normal.magnitude} \n" +
-                        //                                                $"c: {p.c} \n" +
-                        //                                                $"delta_s: {p.delta_s}");
-
-                        //Gizmos.color = Color.white;
-                        //Gizmos.DrawRay(pos, p.vel);
-
-                        //Gizmos.color = Color.red;
-                        //Gizmos.DrawRay(pos, p.tangent); // friction
-
-                        //Gizmos.color = Color.green;
-                        //Gizmos.DrawRay(pos, p.normal); //air
-                        //DrawSurroundingGrid(p.pos);
-                            
-                    }
-                    else
-                    {
-                        var p1 = particles[i + 1];
-                        var pos1 = GridToWorld(p1.pos);
-                        Gizmos.color = Color.white;
-                        Gizmos.DrawLine(pos, pos1);
-                    }
+                var pos = GridToWorld(p.pos);
+                Gizmos.color = Color.blue;
+                Gizmos.DrawSphere(pos, 5f);
+                // UnityEditor.Handles.Label(pos - Vector3.one * 3,$"water: {p.water} \n" +
+                // $"sediment: {p.sediment} \n" +
+                // $"phi: {p.phi} \n" +
+                // $"vel: {p.vel} \n"
+                // );
                 }
             }
-
-
         }
-    }
 
     Vector3 GridToWorld(Vector3 gridPos)
     {
-        return (gridPos * chunkSize/globalRes) + min_bounds; 
+        return (gridPos * totalSize.x/globalRes) + min_bounds; 
     }
 
     public void DrawSurroundingGrid(Vector3 gridPos)
@@ -366,84 +399,133 @@ public class ChunkController : MonoBehaviour
         return id.x + (id.y * globalGridRes) + (id.z * globalGridRes * globalGridRes);
     }
 
-    public List<Vector3Int> GetRadialChunks()
-    {
-        var max_radius = (planet.radius+planet.radialRange) / chunkSize;
-        var min_radius = (planet.radius-planet.radialRange) / chunkSize;
-        var r2_max = max_radius*max_radius;
-        var r2_min =min_radius*min_radius;
+    // TODO: Needs Refactoring
+    // public List<Vector3Int> GetRadialChunks()
+    // {
+    //     var max_radius = (planet.radius+planet.radialRange) / chunkSize;
+    //     var min_radius = (planet.radius-planet.radialRange) / chunkSize;
+    //     var r2_max = max_radius*max_radius;
+    //     var r2_min =min_radius*min_radius;
 
-        var center = WorldToGrid(planet.coordinates);
-        var z_min = (int)(center.z - max_radius);
-        var z_max = (int)(z_min + 2 * max_radius);
-        var z_rows = z_max - z_min;
-        var chunks = new List<Vector3Int>();
+    //     var center = WorldToGrid(planet.coordinates);
+    //     var z_min = (int)(center.z - max_radius);
+    //     var z_max = (int)(z_min + 2 * max_radius);
+    //     var z_rows = z_max - z_min;
+    //     var chunks = new List<Vector3Int>();
 
-        for (int k = 0; k <= z_rows; k ++)
-        {
-            var row_z = z_min + k;
-            float dzh = 0;
+    //     for (int k = 0; k <= z_rows; k ++)
+    //     {
+    //         var row_z = z_min + k;
+    //         float dzh = 0;
 
-            if (row_z > center.z)
-                    dzh = center.z - (row_z);
-            else
-                dzh = center.z - (row_z+1);
+    //         if (row_z > center.z)
+    //                 dzh = center.z - (row_z);
+    //         else
+    //             dzh = center.z - (row_z+1);
             
-            var y_radius_max = Mathf.Sqrt(r2_max - (dzh * dzh));
+    //         var y_radius_max = Mathf.Sqrt(r2_max - (dzh * dzh));
 
-            float y_radius_min = 0;
-            if(dzh < min_radius)
-                y_radius_min = Mathf.Sqrt(r2_min - (dzh * dzh));
+    //         float y_radius_min = 0;
+    //         if(dzh < min_radius)
+    //             y_radius_min = Mathf.Sqrt(r2_min - (dzh * dzh));
 
-            var y_r2_max = y_radius_max*y_radius_max;
-            var y_r2_min = y_radius_min*y_radius_min;
+    //         var y_r2_max = y_radius_max*y_radius_max;
+    //         var y_r2_min = y_radius_min*y_radius_min;
 
-            var y_min = (int)(center.y - y_radius_max);
-            var y_max = (int)(y_min + 2 * y_radius_max);
-            var rows = y_max - y_min;
+    //         var y_min = (int)(center.y - y_radius_max);
+    //         var y_max = (int)(y_min + 2 * y_radius_max);
+    //         var rows = y_max - y_min;
             
-            for (int i = 0; i <= rows; i++)
-            {
-                var row_y = y_min + i;
-                float dh_max = 0;
-                float dh_min = 0;
+    //         for (int i = 0; i <= rows; i++)
+    //         {
+    //             var row_y = y_min + i;
+    //             float dh_max = 0;
+    //             float dh_min = 0;
 
-                if (row_y > center.y)
-                {
-                    dh_max = center.y - (row_y);
-                    dh_min = Mathf.Min((row_y+1) - center.y, y_radius_max);
-                }
-                else
-                {
-                    dh_max = center.y - (row_y+1);
-                    dh_min = Mathf.Min(center.y - (row_y), y_radius_max);
-                }
+    //             if (row_y > center.y)
+    //             {
+    //                 dh_max = center.y - (row_y);
+    //                 dh_min = Mathf.Min((row_y+1) - center.y, y_radius_max);
+    //             }
+    //             else
+    //             {
+    //                 dh_max = center.y - (row_y+1);
+    //                 dh_min = Mathf.Min(center.y - (row_y), y_radius_max);
+    //             }
 
-                float dx_min = 0;
-                if(dh_min < y_radius_min)
-                    dx_min = Mathf.Sqrt(y_r2_min - (dh_min * dh_min));
+    //             float dx_min = 0;
+    //             if(dh_min < y_radius_min)
+    //                 dx_min = Mathf.Sqrt(y_r2_min - (dh_min * dh_min));
 
-                var dx_max = Mathf.Sqrt(y_r2_max - (dh_max * dh_max));
+    //             var dx_max = Mathf.Sqrt(y_r2_max - (dh_max * dh_max));
 
 
-                //chunks.Add(RoundDownVector(new Vector3((int)(center.x-dx), row_y, row_z)));
-                //chunks.Add(RoundDownVector(new Vector3((int)(center.x+dx), row_y, row_z)));
-                for (int x = (int)(center.x-dx_max); x <= center.x-dx_min; x++)
-                {
-                    chunks.Add(RoundDownVector(new Vector3(x, row_y, row_z)));
-                }
-                for (int x = (int)(center.x+dx_min); x <= center.x+dx_max; x++)
-                {
-                    chunks.Add(RoundDownVector(new Vector3(x, row_y, row_z)));
-                }
-            }
-        }
+    //             //chunks.Add(RoundDownVector(new Vector3((int)(center.x-dx), row_y, row_z)));
+    //             //chunks.Add(RoundDownVector(new Vector3((int)(center.x+dx), row_y, row_z)));
+    //             for (int x = (int)(center.x-dx_max); x <= center.x-dx_min; x++)
+    //             {
+    //                 chunks.Add(RoundDownVector(new Vector3(x, row_y, row_z)));
+    //             }
+    //             for (int x = (int)(center.x+dx_min); x <= center.x+dx_max; x++)
+    //             {
+    //                 chunks.Add(RoundDownVector(new Vector3(x, row_y, row_z)));
+    //             }
+    //         }
+    //     }
 
-        return chunks;
-    }
+    //     return chunks;
+    // }
 
     public Vector3 WorldToGrid(Vector3 dims)
     {
         return (dims - min_bounds) / chunkSize;
+    }
+
+    private bool CanRedraw()
+    {
+        var currentTime = Time.time;
+        var timeSince = currentTime - lastRedrawTime;
+
+        if (timeSince >= timeBetweenRedraw)
+        {
+            lastRedrawTime = currentTime;
+            return true;
+        }
+        return false;
+    }
+
+    private List<Vector3Int> GetAllChunks()
+    {
+        var end = RoundDownVector(WorldToGrid(max_bounds));
+        var chunks = new List<Vector3Int>();
+        var center = WorldToGrid(planet_go.transform.position);
+
+        var radius = planet.planet_params.radius;
+        var radialRange = planet.planet_params.radial_range;
+
+        var max_radius = (radius + radialRange) / chunkSize;
+        var min_radius = (radius - radialRange) / chunkSize;
+        bool onlyOne = max_bounds.z == chunkSize / 2;
+
+        for (int i = 0; i < end.x; i++)
+        {
+            for (int j = 0; j < end.y; j++)
+            {
+                for (int k = 0; k < end.z; k++)
+                {
+                    var point = new Vector3Int(i, j, k);
+                    var chunkRadius = point-center;
+                    if(chunkRadius.magnitude > max_radius && !onlyOne)
+                        continue;
+
+                    if(chunkRadius.magnitude < min_radius && !onlyOne)
+                        continue;
+
+                    chunks.Add(point);
+                }   
+            }
+        }
+
+        return chunks;
     }
 }

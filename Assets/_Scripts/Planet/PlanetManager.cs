@@ -5,8 +5,8 @@ using UnityEngine;
 public class PlanetManager
 {
     private GridBuilder gridBuilder;
-    public MeshBuilder meshBuilder;
-    public SimulationController sim;
+    private MeshBuilder meshBuilder;
+    private SimulationController sim;
     public Planet planet;
 
     
@@ -14,11 +14,59 @@ public class PlanetManager
     public PlanetManager(Planet planet)
     {
         this.planet = planet;
+    }
 
-        gridBuilder = new GridBuilder(planet);
-        planet.grid = gridBuilder.BuildGrid();
+    public Grid GetGrid()
+    {
+        if(gridBuilder == null)
+            gridBuilder = new GridBuilder(planet.planet_params, planet.noise_params);
 
-        meshBuilder = new MeshBuilder(planet, true, planet.invert_normals, planet.flat_shade);
-        sim = new SimulationController(planet);
+        return gridBuilder.Build();
+    }
+
+    public Mesh GetMesh(Chunk chunk, Transform parent)
+    {
+        if(meshBuilder == null)
+            meshBuilder = new MeshBuilder(planet.mesh_params, planet.noise_params, planet.grid.gridBuffer);
+
+        return meshBuilder.Build(chunk, parent);
+    }
+
+    public void RunThermalSimulation()
+    {
+        if(sim == null)
+            sim = new SimulationController(planet.thermal_params, planet.hydraulic_params, planet.planet_params, planet.grid);
+
+        sim.RunThermalSim();
+    }
+
+    public Water[] GetHydraulicParticles()
+    {
+        return sim.GetHydraulicParticles();
+    }
+
+    public void RunHydraulicSimulation()
+    {
+        if(sim == null)
+            sim = new SimulationController(planet.thermal_params, planet.hydraulic_params, planet.planet_params, planet.grid);
+
+        sim.RunThermalSim();
+    }
+
+    /// <summary>
+    /// Runs HydraulicSim followed by ThermalSim
+    /// </summary>
+    public void RunCombinedSimulation()
+    {
+        if(sim == null)
+            sim = new SimulationController(planet.thermal_params, planet.hydraulic_params, planet.planet_params, planet.grid);
+
+        sim.RunHydraulicSim();
+        sim.RunThermalSim();
+    }
+
+    public void ReleaseAllBuffers()
+    {
+        sim.ReleaseBuffers();
     }
 }

@@ -389,7 +389,8 @@ FodyWeavers.xsd
 /.vsconfig
 
 Unity.*
-/Assets
+Assets/*
 !/Assets/_Scripts
+!Assets/_Scripts/Shaders/Resources
 !/Assets/_Tests
 *.prefab

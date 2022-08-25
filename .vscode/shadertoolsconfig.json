@@ -1,0 +1,7 @@
+{
+    "hlsl.additionalIncludeDirectories": [
+        "D:/Projects/Programs/Terrain Generation/Assets/_Scripts/Shaders/Resources/Utilites/.",
+        ".",
+        "../Utilities"
+    ]
+}

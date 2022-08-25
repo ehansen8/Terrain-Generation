@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 //TODO Splite Chunk into Chunk and ChunkBehavior
-public class Chunk
+public class Chunk : MonoBehaviour
 {
     public int initial_res;
     public int initial_grid_res;
